@@ -1,0 +1,44 @@
+[project]
+name = "pydabpumps"
+version = "1.2.0"
+authors = [
+  { name="Anko Hanse", email="anko_hanse@hotmail.com" },
+]
+description = "Async python library to communicate with DAB Pumps servers for DConnect and DAB Live"
+readme = "README.md"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Operating System :: OS Independent",
+]
+requires-python = ">=3.8"
+dependencies = [
+  'PyJWT',
+  'httpx<1.0.0'
+]
+
+[project.optional-dependencies]
+tests = [
+  'pytest',
+  'pytest-asyncio',
+]
+ 
+[project.urls]
+Homepage = "https://github.com/ankohanse/pydabpumps"
+Issues = "https://github.com/ankohanse/pydabpumps/issues"
+
+[build-system]
+requires = [
+    "setuptools>=61.0",
+    "wheel",
+    "cython",
+    "unasyncd",
+]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+pydabpumps = ["*.json"]
+

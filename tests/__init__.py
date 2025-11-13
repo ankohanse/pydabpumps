@@ -1,0 +1,1 @@
+from .secrets import TEST_USERNAME, TEST_PASSWORD

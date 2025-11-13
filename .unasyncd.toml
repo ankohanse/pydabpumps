@@ -1,0 +1,23 @@
+[tool.unasyncd]
+remove_unused_imports = false
+no_cache = false
+force_regen = false
+add_editors_note = true
+exclude = [
+    "Something",
+    "SomethingElse.within"
+]
+
+[tool.unasyncd.files]
+    "src/pydabpumps/api_async.py" = "src/pydabpumps/api_sync.py"
+    "tests/test_api_async.py" = "tests/test_api_sync.py"
+
+[tool.unasyncd.add_replacements]
+    "AsyncDabPumps" = "DabPumps"
+    "httpx.AsyncClient" = "httpx.Client"
+    "AsyncTaskHelper" = "TaskHelper"
+    "aclose" = "close"
+    "CALL_CONTEXT_ASYNC" = "CALL_CONTEXT_SYNC"
+    "pytest_asyncio" = "pytest"
+
+
