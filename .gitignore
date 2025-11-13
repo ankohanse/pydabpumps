@@ -1,3 +1,12 @@
+# Note: .gitignore will not work to prevent checkin of tests/secrets.py as 
+# we still want the dummy version in the repository.
+# Instead, run:
+#   git update-index --skip-worktree tests/secrets.py
+
+
+# Custom for this project
+_data/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
