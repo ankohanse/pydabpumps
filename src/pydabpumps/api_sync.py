@@ -1360,6 +1360,9 @@ class DabPumps:
         request = {
             "method": "GET",
             "url": DCONNECT_API_URL + f"/resources/js/localization_{lang}.properties?format=JSON&fullmerge=1",
+            "flags": {
+                'authorize': False,
+            },
         }
         
         _LOGGER.debug(f"Retrieve language info via {request["method"]} {request["url"]}")
@@ -1510,12 +1513,13 @@ class DabPumps:
         timestamp = datetime.now()
         flags = request.get("flags", {})
         flags_redirects = flags.get("redirects", True)
+        flags_authorize = flags.get("authorize", True)
 
         # Always add certain headers
         if not "headers" in request:
             request["headers"] = {}
 
-        if self._auth_method == DabPumpsAuth.HEADER and self._access_token and not context.startswith('login'):
+        if self._auth_method == DabPumpsAuth.HEADER and self._access_token and not context.startswith('login') and flags_authorize:
             request["headers"]['Authorization'] = 'Bearer ' + self._access_token
 
         if self._extra_headers:
@@ -1558,8 +1562,10 @@ class DabPumps:
             error = f"Unable to perform request, got exception '{str(ex)}' while trying to reach {request["url"]}"
             _LOGGER.debug(error)
 
-            # Force a logout to so next login will be a real login, not a token reuse
-            self._logout(context)
+            if flags_authorize:
+                # Force a logout to so next login will be a real login, not a token reuse
+                self._logout(context)
+                
             raise DabPumpsConnectError(error)
 
         # Save the diagnostics if requested

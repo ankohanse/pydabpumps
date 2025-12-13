@@ -1,10 +1,10 @@
 [project]
 name = "pydabpumps"
-version = "1.2.0"
+version = "1.2.1"
 authors = [
   { name="Anko Hanse", email="anko_hanse@hotmail.com" },
 ]
-description = "Async python library to communicate with DAB Pumps servers for DConnect and DAB Live"
+description = "Python library to communicate with DAB Pumps servers for DConnect and DAB Live"
 readme = "README.md"
 classifiers = [
     "Programming Language :: Python :: 3",
