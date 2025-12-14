@@ -1575,8 +1575,8 @@ class DabPumps:
             _LOGGER.debug(error)
 
             # Force a logout to so next login will be a real login, not a token reuse
-            self._logout(context)
             if "401" in response["status"]:
+                self._logout(context)
                 raise DabPumpsAuthError(error)
             else:
                 raise DabPumpsConnectError(error)
