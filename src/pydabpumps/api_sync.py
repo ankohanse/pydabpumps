@@ -1544,8 +1544,6 @@ class DabPumps:
             rsp = self._http_client.send(req, follow_redirects=flags_redirects)
 
             # Remember actual requests and response params, used for diagnostics
-            _LOGGER.debug(f"rsp: {rsp}")
-
             request["headers"] = req.headers
             response = {
                 "success": rsp.is_success or rsp.is_redirect,
@@ -1559,7 +1557,7 @@ class DabPumps:
                 response["text"] = rsp.text
             
         except Exception as ex:
-            error = f"Unable to perform request, got exception '{str(ex)}' while trying to reach {request["url"]}"
+            error = f"Request failed: exception '{str(ex)}' while trying to reach {request["url"]}"
             _LOGGER.debug(error)
 
             if flags_authorize:
@@ -1573,7 +1571,7 @@ class DabPumps:
         
         # Check response
         if not response["success"]:
-            error = f"Unable to perform request, got response {response["status"]} while trying to reach {request["url"]}"
+            error = f"Request failed: {response["status"]} while trying to reach {request["url"]}"
             _LOGGER.debug(error)
 
             # Force a logout to so next login will be a real login, not a token reuse
@@ -1606,7 +1604,7 @@ class DabPumps:
                     self._logout(context)
                     raise DabPumpsAuthError(error)
                 else:
-                    error = f"Unable to perform request, got response {res} {code} {msg} while trying to reach {request["url"]}"
+                    error = f"Request failed: {res} {code} {msg} while trying to reach {request["url"]}"
                     _LOGGER.debug(error)
                     raise DabPumpsError(error)
 
