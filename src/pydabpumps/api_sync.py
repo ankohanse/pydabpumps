@@ -1103,7 +1103,7 @@ class DabPumps:
                 # We have raw install data that includes all devices; find the correct device
                 # {
                 #   "dums": [
-                #     { "configuration_id": "guid3", "serial": "some_str", "statusts": "some_data", "status": { ... }, ... }
+                #     { "configuration_id": "guid3", "serial": "some_str", "statusts": "some_ts, "status": { ... }, ... }
                 #   ]
                 # }
                 ins_dums = raw_install_data.get('dums', [])
@@ -1112,6 +1112,7 @@ class DabPumps:
                     dum_serial = dum.get('serial', None) or ''
                     if dum_serial == serial:
                         statusts = dum.get('statusts') or ""
+                        lastrecv = dum.get('lastreceived') or ""
                         values = dum.get('status') or {}
                         break
         
@@ -1130,12 +1131,15 @@ class DabPumps:
                 #   ...
                 # }
                 statusts = raw.get('statusts') or ""
+                lastrecv = raw.get('lastreceived') or ""
                 status = raw.get('status') or "{}" # string!
                 values = json.loads(status)
 
         # Process the resulting raw data
         status_map = {}
-        status_ts = datetime.fromisoformat(statusts) if statusts else datetime.now(timezone.utc)
+        dt1 = datetime.fromisoformat(statusts) if statusts else datetime.now(timezone.utc)
+        dt2 = datetime.fromisoformat(lastrecv) if lastrecv else datetime.now(timezone.utc)
+        status_ts = max(dt1, dt2)
 
         for item_key, item_code in values.items():
             try:
