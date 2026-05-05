@@ -1,6 +1,6 @@
 """Constants for the DAB Pumps integration."""
+from datetime import datetime, timezone
 import logging
-import types
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
@@ -45,3 +45,8 @@ DEVICE_STATUS_STATIC = {
 }
 
 HTTPX_REQUEST_TIMEOUT = 20.0
+
+
+# Global helper functions
+utcnow = lambda: datetime.now(timezone.utc)
+utcmin = lambda: datetime.min.replace(tzinfo=timezone.utc)

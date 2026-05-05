@@ -46,6 +46,8 @@ from .const import (
     DCONNECT_APP_USER_AGENT,
     STATUS_UPDATE_HOLD,
     HTTPX_REQUEST_TIMEOUT,
+    utcnow,
+    utcmin,
 )
 
 from .data import (
@@ -740,7 +742,7 @@ class DabPumps:
 
         # Retrieve data via REST request
         match self._fetch_method:
-            case DabPumpsFetch.DABCS:    url = DABCS_API_URL + '/mobile/v1/installations'
+            case DabPumpsFetch.DABCS:    url = DABCS_API_URL + '/mobile/v1/installations?include=current_user_subscription'
             case DabPumpsFetch.DCONNECT: url = DCONNECT_API_URL + '/api/v1/installation' # or DABPUMPS_API_URL + '/getInstallationList'
 
         context = f"installations {self._username.lower()}"
@@ -756,13 +758,13 @@ class DabPumps:
         # For DabCS:
         # {
         #   "installations": [
-        #     { "name": "some_str", "installation_id": "some_guid", "metadata": { ... }, "current_user_role": "role", ... }
+        #     { "name": "some_str", "installation_id": "some_guid", "metadata": { ... }, "current_user_role": "role", "current_user_subscription": { "subscription_due_date": "2026-07-15T22:57:46.077Z", "subscription_type": "STANDARD", "status": "ACTIVE", ... }, ... }
         #   ]
         # }
         # For DConnect:
         # {
         #   "values": [     # or "rows": [
-        #     { "name": "some_str", "installation_id": "some_guid", "user_role": "role", ... }
+        #     { "name": "some_str", "installation_id": "some_guid", "user_role": "role", "contract_due_date": "2026-07-15T22:57:46.077Z", "contract_type": "STANDARD"... }
         #   ]
         # }
         install_map = {}
@@ -773,6 +775,7 @@ class DabPumps:
             install_id = installation.get('installation_id', '')
             install_name = installation.get('name', None) or installation.get('description', None) or f"installation {install_idx}"
             install_meta = installation.get('metadata', {})
+            subscription = installation.get('current_user_subscription', {})
 
             _LOGGER.debug(f"Installation found: {install_name}")
             install = DabPumpsInstall(
@@ -782,6 +785,7 @@ class DabPumps:
                 company = installation.get('company', None) or install_meta.get('company', None) or '',
                 address = installation.get('address', None) or install_meta.get('address', None) or '',
                 role = installation.get('current_user_role', None) or installation.get('user_role', None) or DabPumpsUserRole.CUSTOMER,
+                subscr_ts = subscription.get('subscription_due_date', None) or installation.get('contract_due_date', None) or None,
                 devices = len(installation.get('dums', None) or []),
             )
             install_map[install_id] = install
@@ -1079,7 +1083,7 @@ class DabPumps:
                     code = code,
                     value = value,
                     unit = params.unit,
-                    status_ts = datetime.now(timezone.utc),
+                    status_ts = utcnow(),
                     update_ts = None,
                 )
                 status_map[status_key] = status_new 
@@ -1137,8 +1141,8 @@ class DabPumps:
 
         # Process the resulting raw data
         status_map = {}
-        dt1 = datetime.fromisoformat(statusts) if statusts else datetime.now(timezone.utc)
-        dt2 = datetime.fromisoformat(lastrecv) if lastrecv else datetime.now(timezone.utc)
+        dt1 = datetime.fromisoformat(statusts) if statusts else utcnow()
+        dt2 = datetime.fromisoformat(lastrecv) if lastrecv else utcnow()
         status_ts = max(dt1, dt2)
 
         for item_key, item_code in values.items():
@@ -1156,7 +1160,7 @@ class DabPumps:
                 status_old = self._status_actual_map.get(status_key, None)
 
                 if status_old and status_old.update_ts is not None and \
-                (datetime.now(timezone.utc) - status_old.update_ts).total_seconds() < STATUS_UPDATE_HOLD:
+                (utcnow() - status_old.update_ts).total_seconds() < STATUS_UPDATE_HOLD:
 
                     _LOGGER.info(f"Skip refresh of recently updated status ({status_key})")
                     status_map[status_key] = status_old
@@ -1199,7 +1203,7 @@ class DabPumps:
             # We keep the updated value for a hold period to prevent it from flipping back and forth 
             # between its old value and new value because of delays in update on the DAB server side.
             if status_old.update_ts is not None and \
-               (datetime.now(timezone.utc) - status_old.update_ts).total_seconds() < STATUS_UPDATE_HOLD:
+               (utcnow() - status_old.update_ts).total_seconds() < STATUS_UPDATE_HOLD:
 
                 # Recently updated static status (i.e. button press)
                 continue
@@ -1267,7 +1271,7 @@ class DabPumps:
         _LOGGER.info(f"Set {serial}:{key} from {status.value} to {value} ({code})")
         
         # update the cached value in status_map
-        status_upd = replace(status, code = code, value = value, update_ts = datetime.now(timezone.utc))
+        status_upd = replace(status, code = code, value = value, update_ts = utcnow())
         self._status_actual_map[status_key] = status_upd
         
         # Update data via REST request

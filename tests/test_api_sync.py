@@ -228,6 +228,8 @@ def test_get_data(name, method, loop, exp_except, request):
         assert type(install) is DabPumpsInstall
         assert install.id is not None    
         assert install.name is not None  
+        assert install.role is not None
+        assert install.subscr_ts is not None
 
     # Get install details, config metadata and initial statuses (just for the first install)
     context.api.fetch_install_details(install_id)
@@ -385,6 +387,17 @@ def test_set_data(method, key, codes, exp_code, exp_except, request):
 
     old_code = status.code
     new_code = next( (code for code in codes if code != old_code), None )
+
+    # Check config param
+    device = context.api.device_map.get(status.serial)
+    install = context.api.install_map.get(device.install_id)
+    config = context.api.config_map.get(device.config_id)
+    param = config.meta_params.get(status.key)
+
+    if install.role[0] not in param.change:
+        # Not allowed to change this param with this user account. Skip test
+        _LOGGER.debug(f"User '{TEST_USERNAME}' is not allowed to set {key}. Skip test")
+        return
 
     # Change device status and do immediate test of changed value. 
     # We hold the changed value while the backend is processing the change.

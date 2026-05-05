@@ -35,11 +35,20 @@ class DabPumpsParamType(StrEnum):
 class DabPumpsInstall:
     id: str
     name: str
-    description: str
-    company: str
-    address: str
-    role: DabPumpsUserRole
-    devices: int
+    description: str = None
+    company: str = None
+    address: str = None
+    role: DabPumpsUserRole = DabPumpsUserRole.CUSTOMER
+    subscr_ts: datetime|None = None # utc
+    devices: int = 0
+
+    def __post_init__(self):
+        """
+        Custom processing in case the dataclass was constructed from a dict
+        status = DabPumpsStatus(**dict)
+        """
+        if self.subscr_ts and isinstance(self.subscr_ts, str):
+            self.subscr_ts = datetime.fromisoformat(self.subscr_ts)
 
 
 @dataclass
@@ -101,8 +110,8 @@ class DabPumpsStatus:
     code: str
     value: str
     unit: str
-    status_ts: datetime|None
-    update_ts: datetime|None
+    status_ts: datetime|None # utc
+    update_ts: datetime|None # utc
 
     def __post_init__(self):
         """
