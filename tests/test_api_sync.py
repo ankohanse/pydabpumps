@@ -476,7 +476,7 @@ def test_set_role(method, exp_except, request):
 
     # Find current role and determine new role to change into
     old_role = install.role
-    new_role = next( (role for role in DabPumpsUserRole if role != old_role), None )
+    new_role = next( (role for role in [DabPumpsUserRole.CUSTOMER,DabPumpsUserRole.INSTALLER] if role != old_role), None )
 
     # Change role and do immediate test of changed value. 
     # We hold the changed value while the backend is processing the change.

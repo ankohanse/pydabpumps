@@ -784,11 +784,19 @@ class DabPumps:
                 description = installation.get('description', None) or '',
                 company = installation.get('company', None) or install_meta.get('company', None) or '',
                 address = installation.get('address', None) or install_meta.get('address', None) or '',
-                role = installation.get('current_user_role', None) or installation.get('user_role', None) or DabPumpsUserRole.CUSTOMER,
+                role = installation.get('current_user_role', None) or installation.get('user_role', None) or DabPumpsUserRole.CUSTOMER_FREE,
                 subscr_ts = subscription.get('subscription_due_date', None) or installation.get('contract_due_date', None) or None,
                 devices = len(installation.get('dums', None) or []),
             )
             install_map[install_id] = install
+
+            # Sanity check, to confirm the Role and Subscription work as we expect
+            if install.subscr_ts is not None and install.subscr_ts > utcnow():
+                if install.role in [DabPumpsUserRole.CUSTOMER_FREE, DabPumpsUserRole.INSTALLER_FREE]:
+                    _LOGGER.warning(f"Detected unexpected role '{install.role}' while subscription is valid. Please contact the author of the pydabpumps library")
+            else:
+                if install.role in [DabPumpsUserRole.CUSTOMER, DabPumpsUserRole.INSTALLER]:
+                    _LOGGER.warning(f"Detected unexpected role '{install.role}' while subscription is expired. Please contact the author of the pydabpumps library")
 
         # Sanity check. # Never overwrite a known install_map with empty lists
         if len(install_map)==0:
@@ -1015,10 +1023,10 @@ class DabPumps:
                 max = param_max,
                 family = param_family,
                 group = param_group,
-                view = ''.join([ s[0] for s in (meta_param.get('view') or []) ]),
-                change = ''.join([ s[0] for s in (meta_param.get('change') or []) ]),
-                log = ''.join([ s[0] for s in (meta_param.get('log') or []) ]),
-                report = ''.join([ s[0] for s in (meta_param.get('report') or []) ])
+                view = ''.join([ DabPumpsUserRole.to_char(s) for s in (meta_param.get('view') or []) ]),
+                change = ''.join([ DabPumpsUserRole.to_char(s) for s in (meta_param.get('change') or []) ]),
+                log = ''.join([ DabPumpsUserRole.to_char(s) for s in (meta_param.get('log') or []) ]),
+                report = ''.join([ DabPumpsUserRole.to_char(s) for s in (meta_param.get('report') or []) ])
             )
             conf_params[param_name] = param
         
@@ -1304,6 +1312,13 @@ class DabPumps:
         """
         Set a new role for the logged in user within a DAB Pumps install.
         """
+
+        # Sanity check
+        if role_old not in [DabPumpsUserRole.CUSTOMER, DabPumpsUserRole.INSTALLER] or \
+           role_new not in [DabPumpsUserRole.CUSTOMER, DabPumpsUserRole.INSTALLER]:
+            
+            _LOGGER.warning(f"User role must be customer or installer")
+            return False
 
         match self._fetch_method:
             case DabPumpsFetch.DABCS: 

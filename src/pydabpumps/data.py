@@ -23,7 +23,25 @@ class DabPumpsDataError(DabPumpsError):
 
 class DabPumpsUserRole(StrEnum):
     CUSTOMER = "CUSTOMER"
+    CUSTOMER_FREE = "CUSTOMER_FREE"
     INSTALLER = "INSTALLER"
+    INSTALLER_FREE = "INSTALLER_FREE"
+    INSTALLER_LOCAL = "LOCALINSTALLER"
+    SERVICE = "SERVICE"
+    R_AND_D = "R&D"
+
+    @staticmethod
+    def to_char(role: str):
+        match role:
+            case DabPumpsUserRole.CUSTOMER: return 'C'
+            case DabPumpsUserRole.CUSTOMER_FREE: return 'c'
+            case DabPumpsUserRole.INSTALLER: return 'I'
+            case DabPumpsUserRole.INSTALLER_FREE: return 'i'
+            case DabPumpsUserRole.INSTALLER_LOCAL: return 'L'
+            case DabPumpsUserRole.SERVICE: return 'S'
+            case DabPumpsUserRole.R_AND_D: return 'R'
+            case _: return 'C'
+
 
 class DabPumpsParamType(StrEnum):
     ENUM = "enum"
