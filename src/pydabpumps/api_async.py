@@ -787,14 +787,6 @@ class AsyncDabPumps:
             )
             install_map[install_id] = install
 
-            # Sanity check, to confirm the Role and Subscription work as we expect
-            if install.subscr_ts is not None and install.subscr_ts > utcnow():
-                if install.role in [DabPumpsUserRole.CUSTOMER_FREE, DabPumpsUserRole.INSTALLER_FREE]:
-                    _LOGGER.warning(f"Detected unexpected role '{install.role}' while subscription is valid. Please contact the author of the pydabpumps library")
-            else:
-                if install.role in [DabPumpsUserRole.CUSTOMER, DabPumpsUserRole.INSTALLER]:
-                    _LOGGER.warning(f"Detected unexpected role '{install.role}' while subscription is expired. Please contact the author of the pydabpumps library")
-
         # Sanity check. # Never overwrite a known install_map with empty lists
         if len(install_map)==0:
             raise DabPumpsDataError(f"No installations found in data")
