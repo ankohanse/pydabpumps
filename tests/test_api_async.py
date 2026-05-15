@@ -61,18 +61,18 @@ async def context():
 @pytest.mark.parametrize(
     "name, method, usr, pwd, exp_except",
     [
-        ("ok",   'Any',           TEST_USERNAME, TEST_PASSWORD, None),
-        ("ok",   'H2D_app',       TEST_USERNAME, TEST_PASSWORD, None),
-        ("ok",   'DabLive_app_0', TEST_USERNAME, TEST_PASSWORD, None),
-        ("ok",   'DabLive_app_1', TEST_USERNAME, TEST_PASSWORD, None),
-        ("ok",   'DConnect_app',  TEST_USERNAME, TEST_PASSWORD, None),
-        ("ok",   'DConnect_web',  TEST_USERNAME, TEST_PASSWORD, None),
-        ("fail", 'Any',           "dummy_usr",   "wrong_pwd",   DabPumpsAuthError),
-        ("fail", 'H2D_app',       "dummy_usr",   "wrong_pwd",   DabPumpsAuthError),
-        ("fail", 'DabLive_app_0', "dummy_usr",   "wrong_pwd",   DabPumpsAuthError),
-        ("fail", 'DabLive_app_1', "dummy_usr",   "wrong_pwd",   DabPumpsAuthError),
-        ("fail", 'DConnect_app',  "dummy_usr",   "wrong_pwd",   DabPumpsAuthError),
-        ("fail", 'DConnect_web',  "dummy_usr",   "wrong_pwd",   DabPumpsAuthError),
+        ("ok",   None,                        TEST_USERNAME, TEST_PASSWORD, None),
+        ("ok",   DabPumpsLogin.H2D_APP,       TEST_USERNAME, TEST_PASSWORD, None),
+        ("ok",   DabPumpsLogin.DABLIVE_APP_0, TEST_USERNAME, TEST_PASSWORD, None),
+        ("ok",   DabPumpsLogin.DABLIVE_APP_1, TEST_USERNAME, TEST_PASSWORD, None),
+        ("ok",   DabPumpsLogin.DCONNECT_APP,  TEST_USERNAME, TEST_PASSWORD, None),
+        ("ok",   DabPumpsLogin.DCONNECT_WEB,  TEST_USERNAME, TEST_PASSWORD, None),
+        ("fail", None,                        "dummy_usr",   "wrong_pwd",   DabPumpsAuthError),
+        ("fail", DabPumpsLogin.H2D_APP,       "dummy_usr",   "wrong_pwd",   DabPumpsAuthError),
+        ("fail", DabPumpsLogin.DABLIVE_APP_0, "dummy_usr",   "wrong_pwd",   DabPumpsAuthError),
+        ("fail", DabPumpsLogin.DABLIVE_APP_1, "dummy_usr",   "wrong_pwd",   DabPumpsAuthError),
+        ("fail", DabPumpsLogin.DCONNECT_APP,  "dummy_usr",   "wrong_pwd",   DabPumpsAuthError),
+        ("fail", DabPumpsLogin.DCONNECT_WEB,  "dummy_usr",   "wrong_pwd",   DabPumpsAuthError),
     ]
 )
 async def test_login(name, method, usr, pwd, exp_except, request):
@@ -85,31 +85,15 @@ async def test_login(name, method, usr, pwd, exp_except, request):
     if exp_except is None:
         assert context.api.login_method is None
 
-        match method:
-            case 'Any':
-                await context.api.login()
+        await context.api.login(method)
 
-                assert context.api.login_method is not None
-                
-            case 'H2D_app':
-                await context.api._login_h2d_app()
+        assert context.api.login_method is not None
 
-                assert context.api._access_token is not None
-                assert context.api._access_expiry > datetime.min
-                assert context.api._refresh_token is not None
-                assert context.api._refresh_expiry > datetime.min
-
-            case 'DabLive_app_0':
-                await context.api._login_dablive_app(isDabLive=0)
-
-            case 'DabLive_app_1':
-                await context.api._login_dablive_app(isDabLive=1)
-
-            case 'DConnect_app':
-                await context.api._login_dconnect_app()
-
-            case 'DConnect_web':
-                await context.api._login_dconnect_web()
+        if method != DabPumpsLogin.DCONNECT_WEB:
+            assert context.api._access_token is not None
+            assert context.api._access_expiry > datetime.min
+            assert context.api._refresh_token is not None
+            assert context.api._refresh_expiry > datetime.min
 
         assert context.api.install_map is not None
         assert context.api.device_map is not None
@@ -124,13 +108,7 @@ async def test_login(name, method, usr, pwd, exp_except, request):
 
     else:
         with pytest.raises(exp_except):
-            match method:
-                case 'Any':             await context.api.login()
-                case 'H2D_app':         await context.api._login_h2d_app()
-                case 'DabLive_app_0':   await context.api._login_dablive_app(isDabLive=0)
-                case 'DabLive_app_1':   await context.api._login_dablive_app(isDabLive=1)
-                case 'DConnect_app':    await context.api._login_dconnect_app()
-                case 'DConnect_web':    await context.api._login_dconnect_web()
+            await context.api.login(method)
 
 
 @pytest.mark.asyncio
@@ -183,14 +161,14 @@ async def test_login_seq(name, usr, pwd, exp_except, request):
 @pytest.mark.parametrize(
     "name, method, loop, exp_except",
     [
-        ("ok",  'Auto',                      0, None),
+        ("ok",  None,                        0, None),
         ("ok",  DabPumpsLogin.H2D_APP,       0, None),
         ("ok",  DabPumpsLogin.DABLIVE_APP_0, 0, None),
         ("ok",  DabPumpsLogin.DABLIVE_APP_1, 0, None),
         ("ok",  DabPumpsLogin.DCONNECT_APP,  0, None),
         ("ok",  DabPumpsLogin.DCONNECT_WEB,  0, None),
         #
-        #("24h", "Auto",                      24*60, None),    # Run 1 full day
+        #("24h", None,                        24*60, None),    # Run 1 full day
         #("24h", DabPumpsLogin.H2D_APP,       24*60, None),    # Run 1 full day
         #("24h", DabPumpsLogin.DABLIVE_APP_1, 24*60, None),    # Run 1 full day
         #("24h", DabPumpsLogin.DCONNECT_APP,  24*60, None),    # Run 1 full day
@@ -206,13 +184,7 @@ async def test_get_data(name, method, loop, exp_except, request):
     context.api.set_diagnostics(lambda context,item,detail,data: None)
 
     # Login
-    match method:
-        case 'Auto':                        await context.api.login()
-        case DabPumpsLogin.H2D_APP:         await context.api._login_h2d_app()
-        case DabPumpsLogin.DABLIVE_APP_0:   await context.api._login_dablive_app(isDabLive=0)
-        case DabPumpsLogin.DABLIVE_APP_1:   await context.api._login_dablive_app(isDabLive=1)
-        case DabPumpsLogin.DCONNECT_APP:    await context.api._login_dconnect_app()
-        case DabPumpsLogin.DCONNECT_WEB:    await context.api._login_dconnect_web()
+    await context.api.login(method)
 
     login_method_org = context.api.login_method
 
@@ -334,26 +306,26 @@ async def test_get_data(name, method, loop, exp_except, request):
 @pytest.mark.parametrize(
     "method, key, codes, exp_code, exp_except",
     [
-        ('Auto',                      "PowerShowerBoost",        ["20","30"],   "=", None),
-        ('Auto',                      "PowerShowerDuration",     ["300","360"], "=", None),
-        ('Auto',                      "SleepModeEnable",         ["0", "1"],    "=", None),
-        ('Auto',                      "RF_EraseHistoricalFault", ["1"],         "0", None), # Falls back to 0 after STATUS_UPDATE_HOLD
+        (None,                        "PowerShowerBoost",        ["20","30"],   "=", None),
+        (None,                        "PowerShowerDuration",     ["300","360"], "=", None),
+        (None,                        "SleepModeEnable",         ["0", "1"],    "=", None),
+        (None,                        "Identify",                ["1"],         "0", None), # Falls back to 0 after STATUS_UPDATE_HOLD
         (DabPumpsLogin.H2D_APP,       "PowerShowerBoost",        ["20","30"],   "=", None),
         (DabPumpsLogin.H2D_APP,       "PowerShowerDuration",     ["300","360"], "=", None),
         (DabPumpsLogin.H2D_APP,       "SleepModeEnable",         ["0", "1"],    "=", None),
-        (DabPumpsLogin.H2D_APP,       "RF_EraseHistoricalFault", ["1"],         "0", None), # Falls back to 0 after STATUS_UPDATE_HOLD
+        (DabPumpsLogin.H2D_APP,       "Identify",                ["1"],         "0", None), # Falls back to 0 after STATUS_UPDATE_HOLD
         (DabPumpsLogin.DABLIVE_APP_1, "PowerShowerBoost",        ["20","30"],   "=", None),
         (DabPumpsLogin.DABLIVE_APP_1, "PowerShowerDuration",     ["300","360"], "=", None),
         (DabPumpsLogin.DABLIVE_APP_1, "SleepModeEnable",         ["0", "1"],    "=", None),
-        (DabPumpsLogin.DABLIVE_APP_1, "RF_EraseHistoricalFault", ["1"],         "0", None), # Falls back to 0 after STATUS_UPDATE_HOLD
+        (DabPumpsLogin.DABLIVE_APP_1, "Identify",                ["1"],         "0", None), # Falls back to 0 after STATUS_UPDATE_HOLD
         (DabPumpsLogin.DCONNECT_APP,  "PowerShowerBoost",        ["20","30"],   "=", None),
         (DabPumpsLogin.DCONNECT_APP,  "PowerShowerDuration",     ["300","360"], "=", None),
         (DabPumpsLogin.DCONNECT_APP,  "SleepModeEnable",         ["0", "1"],    "=", None),
-        (DabPumpsLogin.DCONNECT_APP,  "RF_EraseHistoricalFault", ["1"],         "0", None), # Falls back to 0 after STATUS_UPDATE_HOLD
+        (DabPumpsLogin.DCONNECT_APP,  "Identify",                ["1"],         "0", None), # Falls back to 0 after STATUS_UPDATE_HOLD
         (DabPumpsLogin.DCONNECT_WEB,  "PowerShowerBoost",        ["20","30"],   "=", None),
         (DabPumpsLogin.DCONNECT_WEB,  "PowerShowerDuration",     ["300","360"], "=", None),
         (DabPumpsLogin.DCONNECT_WEB,  "SleepModeEnable",         ["0", "1"],    "=", None),
-        (DabPumpsLogin.DCONNECT_WEB,  "RF_EraseHistoricalFault", ["1"],         "0", None), # Falls back to 0 after STATUS_UPDATE_HOLD
+        (DabPumpsLogin.DCONNECT_WEB,  "Identify",                ["1"],         "0", None), # Falls back to 0 after STATUS_UPDATE_HOLD
     ]
 )
 async def test_set_data(method, key, codes, exp_code, exp_except, request):
@@ -361,16 +333,8 @@ async def test_set_data(method, key, codes, exp_code, exp_except, request):
     context.api = AsyncDabPumps(TEST_USERNAME, TEST_PASSWORD)
     assert context.api.closed == False
 
-    # Login
-    match method:
-        case 'Auto':                        await context.api.login()
-        case DabPumpsLogin.H2D_APP:         await context.api._login_h2d_app()
-        case DabPumpsLogin.DABLIVE_APP_0:   await context.api._login_dablive_app(isDabLive=0)
-        case DabPumpsLogin.DABLIVE_APP_1:   await context.api._login_dablive_app(isDabLive=1)
-        case DabPumpsLogin.DCONNECT_APP:    await context.api._login_dconnect_app()
-        case DabPumpsLogin.DCONNECT_WEB:    await context.api._login_dconnect_web()
-
-    # Get install list
+    # Login and get install list
+    await context.api.login(method)
     await context.api.fetch_install_list()
 
     assert context.api.install_map is not None
@@ -441,7 +405,7 @@ async def test_set_data(method, key, codes, exp_code, exp_except, request):
 @pytest.mark.parametrize(
     "method, exp_except",
     [
-        ('Auto',                      None),
+        (None,                        None),
         (DabPumpsLogin.H2D_APP,       None),
         (DabPumpsLogin.DABLIVE_APP_1, None),
         (DabPumpsLogin.DCONNECT_APP,  None),
@@ -453,16 +417,8 @@ async def test_set_role(method, exp_except, request):
     context.api = AsyncDabPumps(TEST_USERNAME, TEST_PASSWORD)
     assert context.api.closed == False
 
-    # Login
-    match method:
-        case 'Auto':                        await context.api.login()
-        case DabPumpsLogin.H2D_APP:         await context.api._login_h2d_app()
-        case DabPumpsLogin.DABLIVE_APP_0:   await context.api._login_dablive_app(isDabLive=0)
-        case DabPumpsLogin.DABLIVE_APP_1:   await context.api._login_dablive_app(isDabLive=1)
-        case DabPumpsLogin.DCONNECT_APP:    await context.api._login_dconnect_app()
-        case DabPumpsLogin.DCONNECT_WEB:    await context.api._login_dconnect_web()
-
-    # Get install list
+    # Login and get install list
+    await context.api.login(method)
     await context.api.fetch_install_list()
 
     assert context.api.install_map is not None
@@ -542,7 +498,7 @@ async def test_strings(name, lang, exp_lang, request):
 @pytest.mark.parametrize(
     "name, method, exp_li, exp_at, exp_rt, exp_d, exp_except",
     [
-        ("ok",  'Auto',                      1, 1, 1, 3, None),
+        ("ok",  None,                        1, 1, 1, 3, None),
         ("ok",  DabPumpsLogin.H2D_APP,       1, 1, 1, 3, None),
         ("ok",  DabPumpsLogin.DABLIVE_APP_0, 1, 1, 1, 1, None),
         ("ok",  DabPumpsLogin.DABLIVE_APP_1, 1, 1, 1, 1, None),
@@ -582,10 +538,8 @@ async def test_callbacks(name, method, exp_li, exp_at, exp_rt, exp_d, exp_except
     context.api.set_refresh_token_updated(callback=refresh_token_updated)
     context.api.set_diagnostics(callback=diagnostics_updated)
 
-    # Do a login that is forced to use specified method
-    context.api._login_method = method if method != "Auto" else None
-
-    await context.api.login()
+    # Login
+    await context.api.login(method)
 
     assert context.api._login_method is not None
     assert counter_login_info == exp_li
@@ -621,6 +575,116 @@ async def test_callbacks(name, method, exp_li, exp_at, exp_rt, exp_d, exp_except
     assert counter_access_token == exp_at
     assert counter_refresh_token == exp_rt
     assert counter_diagnostics >= exp_d + 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("context")
+@pytest.mark.parametrize(
+    "name, method, exp_except",
+    [
+        ("ok",  None,                        None),
+        ("ok",  DabPumpsLogin.H2D_APP,       None),
+        ("ok",  DabPumpsLogin.DABLIVE_APP_0, None),
+        ("ok",  DabPumpsLogin.DABLIVE_APP_1, None),
+        ("ok",  DabPumpsLogin.DCONNECT_APP,  None),
+        # ("ok",  DabPumpsLogin.DCONNECT_WEB,  None), Skipped because access and refresh tokens are handled via cookies
+    ]
+)
+async def test_token_reuse(name, method, exp_except, request):
+    context = request.getfixturevalue("context")
+    context.api = AsyncDabPumps(TEST_USERNAME, TEST_PASSWORD)
+    assert context.api.closed == False
+
+    # Set login info, token and diagnostics callback functions
+    login_info = None
+    access_token_info = None
+    refresh_token_info = None
+    counter_login_info = 0
+    counter_access_token = 0
+    counter_refresh_token = 0
+
+    def login_info_updated(info: DabPumpsLoginInfo): 
+        nonlocal login_info
+        nonlocal counter_login_info
+        login_info = info
+        counter_login_info += 1
+
+    def access_token_updated(info: DabPumpsAccessTokenInfo): 
+        nonlocal access_token_info
+        nonlocal counter_access_token
+        access_token_info = info
+        counter_access_token += 1
+
+    def refresh_token_updated(info: DabPumpsRefreshTokenInfo): 
+        nonlocal refresh_token_info
+        nonlocal counter_refresh_token
+        refresh_token_info = info
+        counter_refresh_token += 1
+
+    context.api.set_login_info_updated(callback=login_info_updated)
+    context.api.set_access_token_updated(callback=access_token_updated)
+    context.api.set_refresh_token_updated(callback=refresh_token_updated)
+
+    # Login
+    await context.api.login(method)
+
+    assert context.api._login_method is not None
+    assert login_info is not None
+    assert access_token_info is not None
+    assert refresh_token_info is not None
+
+    # Do some more api calls, then close the api
+    await context.api.fetch_install_list()
+    
+    await context.api.close()
+    await asyncio.sleep(10)
+
+    # Create a fresh api instance, passing info, access and refresh token and repeat the login. 
+    # Should not do an actual new login, only a refresh of the access token
+    counter_login_info = 0
+    counter_access_token = 0
+    counter_refresh_token = 0
+
+    context.api = AsyncDabPumps(TEST_USERNAME, TEST_PASSWORD, login_info=login_info, access_token_info=access_token_info, refresh_token_info=refresh_token_info)
+    context.api.set_login_info_updated(callback=login_info_updated)
+    context.api.set_access_token_updated(callback=access_token_updated)
+    context.api.set_refresh_token_updated(callback=refresh_token_updated)
+
+    await context.api.login()
+    await context.api.fetch_install_list()
+
+    assert counter_login_info == 0
+    assert counter_access_token == 0
+    assert counter_refresh_token == 0
+
+    assert context.api.install_map is not None
+    assert type(context.api.install_map) is dict
+    assert len(context.api.install_map) > 0
+    
+    await context.api.close()
+    await asyncio.sleep(10)
+
+    # Create a fresh api instance, passing info and refresh token (but not acces token) and repeat the login. 
+    # Should not do an actual new login, only a refresh of the access token
+    counter_login_info = 0
+    counter_access_token = 0
+    counter_refresh_token = 0
+
+    context.api = AsyncDabPumps(TEST_USERNAME, TEST_PASSWORD, login_info=login_info, refresh_token_info=refresh_token_info)
+    context.api.set_login_info_updated(callback=login_info_updated)
+    context.api.set_access_token_updated(callback=access_token_updated)
+    context.api.set_refresh_token_updated(callback=refresh_token_updated)
+
+    await context.api.login()
+    await context.api.fetch_install_list()
+
+    assert counter_login_info == 0
+    assert counter_access_token == 1
+    assert counter_refresh_token in [0,1]   # refresh-token may or may not be updated when generating new access-token
+
+    assert context.api.install_map is not None
+    assert type(context.api.install_map) is dict
+    assert len(context.api.install_map) > 0
 
 
 @pytest.mark.parametrize(

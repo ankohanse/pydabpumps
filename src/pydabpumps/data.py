@@ -186,8 +186,6 @@ class DabPumpsAuth(StrEnum):
 @dataclass
 class DabPumpsLoginInfo():
     login_method: DabPumpsLogin
-    fetch_method: DabPumpsFetch
-    auth_method: DabPumpsAuth
 
 
 @dataclass

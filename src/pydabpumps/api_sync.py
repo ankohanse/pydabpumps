@@ -88,8 +88,6 @@ class DabPumps:
         # Login data
         self._login_time: datetime|None = None
         self._login_method: DabPumpsLogin|None = login_info.login_method if login_info else None
-        self._fetch_method: DabPumpsFetch|None = login_info.fetch_method if login_info else None
-        self._auth_method: DabPumpsAuth|None = login_info.auth_method if login_info else None
         self._extra_headers = {}
 
         self._access_token: str|None = access_token_info.token if access_token_info is not None else None
@@ -161,8 +159,22 @@ class DabPumps:
     
     
     @property
-    def login_method(self) -> str:
+    def login_method(self) -> DabPumpsLogin:
         return self._login_method
+    
+    @property
+    def fetch_method(self) -> DabPumpsFetch:
+        match self._login_method:
+            case None:                  return None
+            case DabPumpsLogin.H2D_APP: return DabPumpsFetch.DABCS
+            case _:                     return DabPumpsFetch.DCONNECT
+
+    @property
+    def auth_method(self) -> DabPumpsAuth:
+        match self._login_method:
+            case None:                       return None
+            case DabPumpsLogin.DCONNECT_WEB: return DabPumpsAuth.COOKIE
+            case _:                          return DabPumpsAuth.HEADER
     
     @property
     def install_map(self) -> dict[str, DabPumpsInstall]:
@@ -228,7 +240,7 @@ class DabPumps:
             self._http_client = None
 
 
-    def login(self):
+    def login(self, test_method:DabPumpsLogin=None):
         """
         Login to DAB Pumps by trying each of the possible login methods.
         Guards for calls from multiple threads.
@@ -237,24 +249,28 @@ class DabPumps:
         # Only one thread at a time can check token cookie and do subsequent login if needed.
         # Once one thread is done, the next thread can then check the (new) token cookie.
         with self._login_lock:
-            self._login()
+            self._login(test_method=test_method)
 
 
-    def _login(self):
+    def _login(self, test_method:DabPumpsLogin=None):
         """Login to DAB Pumps by trying each of the possible login methods"""        
 
         # We have four possible login methods that all seem to work for both DConnect (non-expired) and for DAB Live
-        # First try to keep using the access token
-        # Next, try to refresh that token.
-        # Then, try the method that succeeded last time!
-        # Finally try all login methods
+        # - First try to keep using the access token
+        # - Next, try to refresh that token.
+        # - Then, try the method that succeeded last time!
+        # - Finally try all login methods
+        # For testing we can force to use a specific method
         error = None
         old_login_method = self._login_method
-        old_fetch_method = self._fetch_method
         old_access_token = self._access_token
         old_refresh_token = self._refresh_token
 
-        methods = [DabPumpsLogin.ACCESS_TOKEN, DabPumpsLogin.REFRESH_TOKEN, self._login_method, DabPumpsLogin.H2D_APP, DabPumpsLogin.DABLIVE_APP_1, DabPumpsLogin.DABLIVE_APP_0, DabPumpsLogin.DCONNECT_APP, DabPumpsLogin.DCONNECT_WEB]
+        if test_method is None:
+            methods = [DabPumpsLogin.ACCESS_TOKEN, DabPumpsLogin.REFRESH_TOKEN, self._login_method, DabPumpsLogin.H2D_APP, DabPumpsLogin.DABLIVE_APP_1, DabPumpsLogin.DABLIVE_APP_0, DabPumpsLogin.DCONNECT_APP, DabPumpsLogin.DCONNECT_WEB]
+        else:
+            methods = [test_method]
+            
         for method in methods:
             try:
                 match method:
@@ -286,8 +302,8 @@ class DabPumps:
                 if success:
                     # Pass changed info back to our parent so it can be used for a more
                     # efficient next login instead of the username+password (after a restart)
-                    if self._login_info_updated_callback is not None and self._login_method != old_login_method or self._fetch_method != old_fetch_method:
-                        self._login_info_updated_callback( DabPumpsLoginInfo(login_method=self._login_method, fetch_method=self._fetch_method, auth_method=self._auth_method) )
+                    if self._login_info_updated_callback is not None and self._login_method != old_login_method:
+                        self._login_info_updated_callback( DabPumpsLoginInfo(login_method=self._login_method) )
 
                     if self._access_token_updated_callback is not None and self._access_token != old_access_token:
                         self._access_token_updated_callback( DabPumpsAccessTokenInfo(token=self._access_token, expiry=self._access_expiry) )
@@ -312,7 +328,7 @@ class DabPumps:
     def _login_access_token(self) -> bool:
         """Inspect whether the access token is still valid"""
 
-        match self._auth_method:
+        match self.auth_method:
             case DabPumpsAuth.COOKIE: access_token = self._http_client.cookies.get(name=DCONNECT_ACCESS_TOKEN_COOKIE, domain=DCONNECT_API_DOMAIN)
             case DabPumpsAuth.HEADER: access_token = self._access_token
             case _: access_token = None
@@ -343,7 +359,7 @@ class DabPumps:
     def _login_refresh_token(self) -> bool:
         """Attempty to refresh the access token"""
 
-        match self._auth_method:
+        match self.auth_method:
             case DabPumpsAuth.COOKIE: refresh_token = self._http_client.cookies.get(name=DCONNECT_REFRESH_TOKEN_COOKIE, domain=DCONNECT_API_DOMAIN)
             case DabPumpsAuth.HEADER: refresh_token = self._refresh_token
             case _: refresh_token = None
@@ -352,7 +368,7 @@ class DabPumps:
             # No refresh-token; silently continue to the next login method
             return False
         
-        if self._auth_method == DabPumpsAuth.COOKIE:
+        if self.auth_method == DabPumpsAuth.COOKIE:
             # The tokens cookies should automatically be refreshed during periodic calls.
             # If we get to this point then somehow the access-token and refresh-token cookies
             # have expired; silently continue to the next login method 
@@ -509,8 +525,6 @@ class DabPumps:
         # if we reach this point then the token was OK
         self._login_time = datetime.now()
         self._login_method = DabPumpsLogin.H2D_APP
-        self._fetch_method = DabPumpsFetch.DABCS
-        self._auth_method = DabPumpsAuth.HEADER
         self._extra_headers = {}
 
         _LOGGER.debug(f"Login succeeded using method {self._login_method}")
@@ -558,8 +572,6 @@ class DabPumps:
         # if we reach this point then the token was OK
         self._login_time = datetime.now()
         self._login_method = DabPumpsLogin.DABLIVE_APP_1 if isDabLive else DabPumpsLogin.DABLIVE_APP_0
-        self._fetch_method = DabPumpsFetch.DCONNECT
-        self._auth_method = DabPumpsAuth.HEADER
         self._extra_headers = {}
 
         _LOGGER.debug(f"Login succeeded using method {self._login_method}")
@@ -611,8 +623,6 @@ class DabPumps:
         # if we reach this point then the token was OK
         self._login_time = datetime.now()
         self._login_method = DabPumpsLogin.DCONNECT_APP
-        self._fetch_method = DabPumpsFetch.DCONNECT
-        self._auth_method = DabPumpsAuth.HEADER
         self._extra_headers = { "User-Agent": DCONNECT_APP_USER_AGENT }
         
         _LOGGER.debug(f"Login succeeded using method {self._login_method}")
@@ -678,8 +688,6 @@ class DabPumps:
         # Set other login parameters
         self._login_time = datetime.now()
         self._login_method = DabPumpsLogin.DCONNECT_WEB
-        self._fetch_method = DabPumpsFetch.DCONNECT
-        self._auth_method = DabPumpsAuth.COOKIE
         self._extra_headers = {}
 
         _LOGGER.debug(f"Login succeeded using method {self._login_method}")
@@ -764,7 +772,7 @@ class DabPumps:
         """
 
         # Retrieve data via REST request
-        match self._fetch_method:
+        match self.fetch_method:
             case DabPumpsFetch.DABCS:    url = DABCS_API_URL + '/mobile/v1/installations?include=current_user_subscription'
             case DabPumpsFetch.DCONNECT: url = DCONNECT_API_URL + '/api/v1/installation' # or DABPUMPS_API_URL + '/getInstallationList'
 
@@ -855,7 +863,7 @@ class DabPumps:
           status_map    (current statuses for each device)
         """
 
-        match self._fetch_method:
+        match self.fetch_method:
             case DabPumpsFetch.DABCS:
                 # Returns statuses for all devices in one call
                 context = f"statuses {install_id}"
@@ -876,7 +884,7 @@ class DabPumps:
         """Get installation details"""
 
         # Retrieve data via REST request
-        match self._fetch_method:
+        match self.fetch_method:
             case DabPumpsFetch.DABCS:    url = DABCS_API_URL + f"/mobile/v1/installations/{install_id}/dums?include_configuration=true"
             case DabPumpsFetch.DCONNECT: url = DCONNECT_API_URL + f"/api/v1/installation/{install_id}" # or DABPUMPS_API_URL + f"/getInstallation/{install_id}"
 
@@ -961,7 +969,7 @@ class DabPumps:
         conf = {}
         conf_id = None
 
-        match self._fetch_method:
+        match self.fetch_method:
             case DabPumpsFetch.DABCS:
                 if raw_install_data is None:
                     raise DabPumpsError("No raw install data was passed to function _fetch_device_config")
@@ -1122,7 +1130,7 @@ class DabPumps:
         statusts = ""
         values = {}
 
-        match self._fetch_method:
+        match self.fetch_method:
             case DabPumpsFetch.DABCS:
                 if raw_install_data is None:
                     raise DabPumpsError("No raw install data was passed to function _fetch_device_statuses")
@@ -1300,7 +1308,7 @@ class DabPumps:
         # Update data via REST request
         context = f"set {status_upd.serial}:{status_upd.key}"
 
-        match self._fetch_method:
+        match self.fetch_method:
             case DabPumpsFetch.DABCS: url = DABCS_API_URL + f"/mobile/v1/dums/{status_upd.serial}/setparam?skipLogging=false"
             case DabPumpsFetch.DCONNECT: url = DCONNECT_API_URL + f"/dum/{status_upd.serial}"
         
@@ -1335,7 +1343,7 @@ class DabPumps:
             _LOGGER.warning(f"User role must be customer or installer")
             return False
 
-        match self._fetch_method:
+        match self.fetch_method:
             case DabPumpsFetch.DABCS: 
                 # Delete old role then add new role
                 context = f"del {install_id}:{self._username}"
@@ -1557,7 +1565,7 @@ class DabPumps:
         if not "headers" in request:
             request["headers"] = {}
 
-        if self._auth_method == DabPumpsAuth.HEADER and self._access_token and not context.startswith('login') and flags_authorize:
+        if self.auth_method == DabPumpsAuth.HEADER and self._access_token and not context.startswith('login') and flags_authorize:
             request["headers"]['Authorization'] = 'Bearer ' + self._access_token
 
         if self._extra_headers:
@@ -1659,9 +1667,9 @@ class DabPumps:
             detail = DabPumpsHistoryDetail.create(timestamp, context, request, response, token)
             data = {
                 "login_time": self._login_time,
-                "login_method": self._login_method,
-                "fetch_method": self._fetch_method,
-                "auth_method": self._auth_method,
+                "login_method": self.login_method,
+                "fetch_method": self.fetch_method,
+                "auth_method": self.auth_method,
                 "extra_headers": self._extra_headers,
 
                 "access_token": self._access_token,
