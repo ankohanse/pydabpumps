@@ -60,6 +60,12 @@ from .data import (
     DabPumpsConfig,
     DabPumpsParams,
     DabPumpsStatus,
+    DabPumpsLogin,
+    DabPumpsFetch,
+    DabPumpsAuth,
+    DabPumpsLoginInfo,
+    DabPumpsAccessTokenInfo,
+    DabPumpsRefreshTokenInfo,
     DabPumpsHistoryItem,
     DabPumpsHistoryDetail,
 )
@@ -67,28 +73,10 @@ from .data import (
 _LOGGER = logging.getLogger(__name__)
 
 
-class DabPumpsLogin(StrEnum):
-    ACCESS_TOKEN = 'Access-Token'
-    REFRESH_TOKEN = 'Refresh-Token'
-    H2D_APP = 'H2D-app'                 # Uses DabCS with Authorization Header
-    DABLIVE_APP_0 = 'DabLive-app_0'     # Uses DConnect with Authorization Header
-    DABLIVE_APP_1 = 'DabLive-app_1'     # Uses DConnect with Authorization Header
-    DCONNECT_APP = 'DConnect-app'       # Uses DConnect with Authorization Header
-    DCONNECT_WEB = 'DConnect-web'       # Uses DConnect with Cookie
-
-class DabPumpsFetch(StrEnum):
-    DABCS = DABCS_API_DOMAIN,
-    DCONNECT = DCONNECT_API_DOMAIN
-
-class DabPumpsAuth(StrEnum):
-    HEADER = "Authorization Header"
-    COOKIE = "Cookie"
-
-
 # DabPumps api to detect device and get device info, fetch the actual data from the device, and parse it
 class AsyncDabPumps:
     
-    def __init__(self, username, password, client:httpx.AsyncClient|None = None):
+    def __init__(self, username, password, client:httpx.AsyncClient=None, login_info:DabPumpsLoginInfo=None, access_token_info:DabPumpsAccessTokenInfo=None, refresh_token_info:DabPumpsRefreshTokenInfo=None):
         # Configuration
         self._username: str = username
         self._username: str = username
@@ -96,19 +84,19 @@ class AsyncDabPumps:
 
         # Login data
         self._login_time: datetime|None = None
-        self._login_method: DabPumpsLogin|None = None
-        self._fetch_method: DabPumpsFetch|None = None
-        self._auth_method: DabPumpsAuth|None = None
+        self._login_method: DabPumpsLogin|None = login_info.login_method if login_info else None
+        self._fetch_method: DabPumpsFetch|None = login_info.fetch_method if login_info else None
+        self._auth_method: DabPumpsAuth|None = login_info.auth_method if login_info else None
         self._extra_headers = {}
 
-        self._access_token: str|None = None
+        self._access_token: str|None = access_token_info.token if access_token_info is not None else None
         self._access_expires_in: int|None = None
-        self._access_expiry: datetime|None = None
-        self._refresh_token: str|None = None
+        self._access_expiry: datetime|None = access_token_info.expiry if access_token_info is not None else None
+        self._refresh_token: str|None = refresh_token_info.token if refresh_token_info is not None else None
         self._refresh_expires_in: int|None = None
-        self._refresh_expiry: datetime|None = None
-        self._refresh_client_id = None
-        self._refresh_client_secret = None
+        self._refresh_expiry: datetime|None = refresh_token_info.expiry if refresh_token_info is not None else None
+        self._refresh_client_id = refresh_token_info.client_id if refresh_token_info is not None else None
+        self._refresh_client_secret = refresh_token_info.client_secret if refresh_token_info is not None else None
 
         # Retrieved data
         self._install_map: dict[str, DabPumpsInstall] = {}
@@ -134,11 +122,30 @@ class AsyncDabPumps:
         # Locks to protect certain operations from being called from multiple threads
         self._login_lock = asyncio.Lock()
 
+        # To notify our parent when login info and tokens are updated
+        self._login_info_updated_callback = None
+        self._access_token_updated_callback = None
+        self._refresh_token_updated_callback = None
+
         # To pass diagnostics data back to our parent
         self._diagnostics_callback = None
 
 
+    def set_login_info_updated(self, callback):
+        """Pass updated login ingo back to our parent"""
+        self._login_info_updated_callback = callback
+
+    def set_access_token_updated(self, callback):
+        """Pass an updated refresh token back to our parent"""
+        self._access_token_updated_callback = callback
+
+    def set_refresh_token_updated(self, callback):
+        """Pass an updated refresh token back to our parent"""
+        self._refresh_token_updated_callback = callback
+
+
     def set_diagnostics(self, callback):
+        """Pass diagnostics data back to our parent"""
         self._diagnostics_callback = callback
 
 
@@ -237,8 +244,13 @@ class AsyncDabPumps:
         # First try to keep using the access token
         # Next, try to refresh that token.
         # Then, try the method that succeeded last time!
-        # Finally try all logig methods
+        # Finally try all login methods
         error = None
+        old_login_method = self._login_method
+        old_fetch_method = self._fetch_method
+        old_access_token = self._access_token
+        old_refresh_token = self._refresh_token
+
         methods = [DabPumpsLogin.ACCESS_TOKEN, DabPumpsLogin.REFRESH_TOKEN, self._login_method, DabPumpsLogin.H2D_APP, DabPumpsLogin.DABLIVE_APP_1, DabPumpsLogin.DABLIVE_APP_0, DabPumpsLogin.DCONNECT_APP, DabPumpsLogin.DCONNECT_WEB]
         for method in methods:
             try:
@@ -269,6 +281,17 @@ class AsyncDabPumps:
                         success =  False
 
                 if success:
+                    # Pass changed info back to our parent so it can be used for a more
+                    # efficient next login instead of the username+password (after a restart)
+                    if self._login_info_updated_callback is not None and self._login_method != old_login_method or self._fetch_method != old_fetch_method:
+                        self._login_info_updated_callback( DabPumpsLoginInfo(login_method=self._login_method, fetch_method=self._fetch_method, auth_method=self._auth_method) )
+
+                    if self._access_token_updated_callback is not None and self._access_token != old_access_token:
+                        self._access_token_updated_callback( DabPumpsAccessTokenInfo(token=self._access_token, expiry=self._access_expiry) )
+
+                    if self._refresh_token_updated_callback is not None and self._refresh_token != old_refresh_token:
+                        self._refresh_token_updated_callback( DabPumpsRefreshTokenInfo(token=self._refresh_token, expiry=self._refresh_expiry, client_id=self._refresh_client_id, client_secret=self._refresh_client_secret) )
+
                     # if we reached this point then a login method succeeded
                     return 
             

@@ -4,6 +4,10 @@ import logging
 from dataclasses import dataclass
 from enum import StrEnum
 
+from .const import (
+    DABCS_API_DOMAIN,
+    DCONNECT_API_DOMAIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -19,6 +23,24 @@ class DabPumpsAuthError(DabPumpsError):
 
 class DabPumpsDataError(DabPumpsError):
     """Exception to indicate generic data failure."""  
+
+
+class DabPumpsLogin(StrEnum):
+    ACCESS_TOKEN = 'Access-Token'
+    REFRESH_TOKEN = 'Refresh-Token'
+    H2D_APP = 'H2D-app'                 # Uses DabCS with Authorization Header
+    DABLIVE_APP_0 = 'DabLive-app_0'     # Uses DConnect with Authorization Header
+    DABLIVE_APP_1 = 'DabLive-app_1'     # Uses DConnect with Authorization Header
+    DCONNECT_APP = 'DConnect-app'       # Uses DConnect with Authorization Header
+    DCONNECT_WEB = 'DConnect-web'       # Uses DConnect with Cookie
+
+class DabPumpsFetch(StrEnum):
+    DABCS = DABCS_API_DOMAIN,
+    DCONNECT = DCONNECT_API_DOMAIN
+
+class DabPumpsAuth(StrEnum):
+    HEADER = "Authorization Header"
+    COOKIE = "Cookie"
 
 
 class DabPumpsUserRole(StrEnum):
@@ -141,6 +163,61 @@ class DabPumpsStatus:
 
         if self.update_ts and isinstance(self.update_ts, str):
             self.update_ts = datetime.fromisoformat(self.update_ts)
+
+
+class DabPumpsLogin(StrEnum):
+    ACCESS_TOKEN = 'Access-Token'
+    REFRESH_TOKEN = 'Refresh-Token'
+    H2D_APP = 'H2D-app'                 # Uses DabCS with Authorization Header
+    DABLIVE_APP_0 = 'DabLive-app_0'     # Uses DConnect with Authorization Header
+    DABLIVE_APP_1 = 'DabLive-app_1'     # Uses DConnect with Authorization Header
+    DCONNECT_APP = 'DConnect-app'       # Uses DConnect with Authorization Header
+    DCONNECT_WEB = 'DConnect-web'       # Uses DConnect with Cookie
+
+class DabPumpsFetch(StrEnum):
+    DABCS = DABCS_API_DOMAIN,
+    DCONNECT = DCONNECT_API_DOMAIN
+
+class DabPumpsAuth(StrEnum):
+    HEADER = "Authorization Header"
+    COOKIE = "Cookie"
+
+
+@dataclass
+class DabPumpsLoginInfo():
+    login_method: DabPumpsLogin
+    fetch_method: DabPumpsFetch
+    auth_method: DabPumpsAuth
+
+
+@dataclass
+class DabPumpsAccessTokenInfo():
+    token: str
+    expiry: datetime
+
+    def __post_init__(self):
+        """
+        Custom processing in case the dataclass was constructed from a dict
+        status = DabPumpsAccessTokenInfo(**dict)
+        """
+        if self.expiry and isinstance(self.expiry, str):
+            self.expiry = datetime.fromisoformat(self.expiry)
+
+
+@dataclass
+class DabPumpsRefreshTokenInfo():
+    token: str
+    expiry: datetime
+    client_id: str
+    client_secret: str
+
+    def __post_init__(self):
+        """
+        Custom processing in case the dataclass was constructed from a dict
+        status = DabPumpsRefreshTokenInfo(**dict)
+        """
+        if self.expiry and isinstance(self.expiry, str):
+            self.expiry = datetime.fromisoformat(self.expiry)
 
 
 @dataclass

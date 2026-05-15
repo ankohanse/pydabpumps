@@ -17,6 +17,9 @@ from pydabpumps import (
     DabPumpsStatus,
     DabPumpsParamType,
     DabPumpsUserRole,
+    DabPumpsLoginInfo,
+    DabPumpsAccessTokenInfo,
+    DabPumpsRefreshTokenInfo,
     DabPumpsHistoryItem, 
     DabPumpsHistoryDetail,
     DabPumpsLogin,
@@ -532,6 +535,92 @@ async def test_strings(name, lang, exp_lang, request):
     assert len(context.api.string_map) > 0
 
     assert context.api.string_map_lang == exp_lang
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("context")
+@pytest.mark.parametrize(
+    "name, method, exp_li, exp_at, exp_rt, exp_d, exp_except",
+    [
+        ("ok",  'Auto',                      1, 1, 1, 3, None),
+        ("ok",  DabPumpsLogin.H2D_APP,       1, 1, 1, 3, None),
+        ("ok",  DabPumpsLogin.DABLIVE_APP_0, 1, 1, 1, 1, None),
+        ("ok",  DabPumpsLogin.DABLIVE_APP_1, 1, 1, 1, 1, None),
+        ("ok",  DabPumpsLogin.DCONNECT_APP,  1, 1, 1, 1, None),
+        ("ok",  DabPumpsLogin.DCONNECT_WEB,  1, 0, 0, 2, None),
+    ]
+)
+async def test_callbacks(name, method, exp_li, exp_at, exp_rt, exp_d, exp_except, request):
+    context = request.getfixturevalue("context")
+    context.api = AsyncDabPumps(TEST_USERNAME, TEST_PASSWORD)
+    assert context.api.closed == False
+
+    # Set login info, token and diagnostics callback functions
+    counter_login_info = 0
+    counter_access_token = 0
+    counter_refresh_token = 0
+    counter_diagnostics = 0
+
+    def login_info_updated(info: DabPumpsLoginInfo): 
+        nonlocal counter_login_info
+        counter_login_info += 1
+
+    def access_token_updated(info: DabPumpsAccessTokenInfo): 
+        nonlocal counter_access_token
+        counter_access_token += 1
+
+    def refresh_token_updated(info: DabPumpsRefreshTokenInfo): 
+        nonlocal counter_refresh_token
+        counter_refresh_token += 1
+
+    def diagnostics_updated(context,item,detail,data): 
+        nonlocal counter_diagnostics
+        counter_diagnostics += 1
+
+    context.api.set_login_info_updated(callback=login_info_updated)
+    context.api.set_access_token_updated(callback=access_token_updated)
+    context.api.set_refresh_token_updated(callback=refresh_token_updated)
+    context.api.set_diagnostics(callback=diagnostics_updated)
+
+    # Do a login that is forced to use specified method
+    context.api._login_method = method if method != "Auto" else None
+
+    await context.api.login()
+
+    assert context.api._login_method is not None
+    assert counter_login_info == exp_li
+    assert counter_access_token == exp_at
+    assert counter_refresh_token == exp_rt
+    assert counter_diagnostics == exp_d
+
+    # Do some more api calls; shouldn't change info and token counters since tokens are still valid
+    await context.api.fetch_install_list()
+
+    assert counter_login_info == exp_li
+    assert counter_access_token == exp_at
+    assert counter_refresh_token == exp_rt
+    assert counter_diagnostics == exp_d + 1
+
+    # Get first install details, metadata and initial statuses
+    install = next( (install for install in context.api.install_map.values()), None)
+    assert install is not None
+    install_id = install.id
+    
+    # Repeat the login; shouldn't change info and token counters since tokens are still valid
+    await context.api.login()
+    
+    assert counter_login_info == exp_li
+    assert counter_access_token == exp_at
+    assert counter_refresh_token == exp_rt
+    assert counter_diagnostics == exp_d + 2
+
+    # Do some more api calls; shouldn't change info and token counters since tokens are still valid
+    await context.api.fetch_install_details(install_id)
+
+    assert counter_login_info == exp_li
+    assert counter_access_token == exp_at
+    assert counter_refresh_token == exp_rt
+    assert counter_diagnostics >= exp_d + 3
 
 
 @pytest.mark.parametrize(
