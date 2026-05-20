@@ -1470,7 +1470,8 @@ class DabPumps:
         match params.type:
             case DabPumpsParamType.ENUM:
                 # Lookup value and translate
-                value = self._translate_string(params.values.get(code, code))
+                val = params.values.get(code, code) if params.values is not None else code 
+                value = self._translate_string(val)
 
             case DabPumpsParamType.MEASURE:
                 if code != '':
