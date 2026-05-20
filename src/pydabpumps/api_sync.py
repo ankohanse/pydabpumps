@@ -85,6 +85,7 @@ class DabPumps:
         self._password: str = password
 
         # Login data
+        self._login_active: bool = False
         self._login_info: DabPumpsLoginInfo = login_info or DabPumpsLoginInfo()
         self._access_token_info: DabPumpsAccessTokenInfo = access_token_info or DabPumpsAccessTokenInfo()
         self._refresh_token_info: DabPumpsRefreshTokenInfo = refresh_token_info or DabPumpsRefreshTokenInfo()
@@ -147,6 +148,9 @@ class DabPumps:
         str = re.sub('[^a-z0-9_-]+', '', str.lower())
         return str            
     
+    @property
+    def login_active(self) -> bool:
+        return self._login_active
     
     @property
     def login_info(self) -> DabPumpsLoginInfo:
@@ -296,6 +300,7 @@ class DabPumps:
                         self._refresh_token_updated_callback(self.refresh_token_info)
 
                     # if we reached this point then a login method succeeded
+                    self._login_active = True
                     return 
             
             except Exception as ex:
@@ -510,7 +515,6 @@ class DabPumps:
 
         # if we reach this point then the token was OK
         self._login_info = DabPumpsLoginInfo(
-            #login_time = datetime.now(),
             login_method = DabPumpsLogin.H2D_APP,
         )
         _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
@@ -545,7 +549,7 @@ class DabPumps:
             expiry = self._calculate_expiry( result.get('expires_in'), DCONNECT_ACCESS_TOKEN_VALID ),
         )
         self._refresh_token_info = DabPumpsRefreshTokenInfo(
-            token = self._validate_token( result.get('refresh_token') ),
+            token = self._validate_token( result.get('refresh_token') ),    # DAB Pumps currently always returns 'NOTIMPLEMENTEDYET', no refresh token mechanism for this login method...
             expiry = self._calculate_expiry( result.get('refresh_expires_in'), DCONNECT_REFRESH_TOKEN_VALID ),
             client_id = None,
             client_secret = None,
@@ -558,7 +562,6 @@ class DabPumps:
 
         # if we reach this point then the token was OK
         self._login_info = DabPumpsLoginInfo(
-            #login_time = datetime.now(),
             login_method = DabPumpsLogin.DABLIVE_APP_1 if isDabLive else DabPumpsLogin.DABLIVE_APP_0,
         )
         _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
@@ -610,7 +613,6 @@ class DabPumps:
 
         # if we reach this point then the token was OK
         self._login_info = DabPumpsLoginInfo(
-            #login_time = datetime.now(),
             login_method = DabPumpsLogin.DCONNECT_APP,
         )
         _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
@@ -676,7 +678,6 @@ class DabPumps:
 
         # Set other login parameters
         self._login_info = DabPumpsLoginInfo(
-            #login_time = datetime.now(),
             login_method = DabPumpsLogin.DCONNECT_WEB,
         )
         _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
@@ -699,22 +700,23 @@ class DabPumps:
         # Sanitize parameters
         context = context.lower() if context else ""
 
-        # Reduce amount of tracing to only when we are actually logged-in.
-        if self._login_info.login_method and method not in [DabPumpsLogin.ACCESS_TOKEN]:
+        # Reduce amount of tracing to only when we are actually logged-in
+        if self._login_active and method not in [DabPumpsLogin.ACCESS_TOKEN]:
+            self._login_active = False
             _LOGGER.debug(f"Logout")
 
         # Home Assistant will issue a warning when calling aclose() on the async aiohttp client.
-        # Instead of closing we will simply forget all cookies. The result is that on a next
+        # Instead of closing we will simply forget the access token. The result is that on a next
         # request, the client will act like it is a new one.
-        self._http_client.cookies.clear()
+        self._http_client.cookies.delete(name=DCONNECT_ACCESS_TOKEN_COOKIE, domain=DCONNECT_API_DOMAIN)
         self._access_token_info = DabPumpsAccessTokenInfo(
             token = None,
             expiry = None,
         )
 
-        # Do not clear refresh token when called in a 'login' context and when we were 
-        # only checking the access_token
-        if not (context.startswith("login") and method in [DabPumpsLogin.ACCESS_TOKEN]):
+        # Only clear refresh token when refresh of access token has failed
+        if method in [DabPumpsLogin.REFRESH_TOKEN]:
+            self._http_client.cookies.delete(name=DCONNECT_REFRESH_TOKEN_COOKIE, domain=DCONNECT_API_DOMAIN)
             self._refresh_token_info = DabPumpsRefreshTokenInfo(
                 token = None,
                 expiry = None,
@@ -722,11 +724,9 @@ class DabPumps:
                 client_secret = None,
             )
 
-        # Do not clear login_method when called in a 'login' context, as it interferes with 
-        # the loop iterating all login methods.
-        if not context.startswith("login"):
+        # Only clear login_method when called from an external context
+        if not context:
             self._login_info = DabPumpsLoginInfo(
-                #login_time = None,
                 login_method = None
             )
 
@@ -1595,7 +1595,7 @@ class DabPumps:
             _LOGGER.debug(error)
 
             if flags_authorize:
-                # Force a logout to so next login will be a real login, not a token reuse
+                # Force a logout to so next login will be a token refresh or real login, not a token reuse
                 self._logout(context)
                 
             raise DabPumpsConnectError(error)
@@ -1608,7 +1608,7 @@ class DabPumps:
             error = f"Request failed: {response["status"]} while trying to reach {request["url"]}"
             _LOGGER.debug(error)
 
-            # Force a logout to so next login will be a real login, not a token reuse
+            # Force a logout to so next login will be a token refresh or a real login, not a token reuse
             if "401" in response["status"]:
                 self._logout(context)
                 raise DabPumpsAuthError(error)
@@ -1634,7 +1634,7 @@ class DabPumps:
                     error = f"Authorization failed: {res} {code} {msg}"
                     _LOGGER.debug(error)
 
-                    # Force a logout to so next login will be a real login, not a token reuse
+                    # Force a logout to so next login will be a token refresh or a real login, not a token reuse
                     self._logout(context)
                     raise DabPumpsAuthError(error)
                 else:

@@ -86,11 +86,13 @@ def test_login(name, method, usr, pwd, exp_except, request):
     assert context.api.closed == False
 
     if exp_except is None:
+        assert not context.api.login_active
         assert context.api.login_info is not None
         assert context.api.login_info.login_method is None
 
         context.api.login(method)
 
+        assert context.api.login_active
         assert context.api.login_info is not None
         assert context.api.login_info.login_method is not None
 
@@ -133,6 +135,7 @@ def test_login_seq(name, usr, pwd, exp_except, request):
     # First call with wrong pwd
     context.api = DabPumps(usr, "wrong_pwd")
     assert context.api.closed == False
+    assert not context.api.login_active
     assert context.api.login_info is not None
     assert context.api.login_info.login_method is None
 
@@ -142,12 +145,14 @@ def test_login_seq(name, usr, pwd, exp_except, request):
     # Next call with correct pwd
     context.api = DabPumps(usr, pwd)
     assert context.api.closed == False
+    assert not context.api.login_active
     assert context.api.login_info is not None
     assert context.api.login_info.login_method is None
 
     if exp_except is None:
         context.api.login()
 
+        assert context.api.login_active
         assert context.api.login_info is not None
         assert context.api.login_info.login_method is not None
         assert context.api.install_map is not None
@@ -551,6 +556,7 @@ def test_callbacks(name, method, exp_li, exp_at, exp_rt, exp_d, exp_except, requ
     # Login
     context.api.login(method)
 
+    assert context.api.login_active
     assert context.api.login_info.login_method is not None
     assert counter_login_info == exp_li
     assert counter_access_token == exp_at
@@ -638,6 +644,7 @@ def test_token_reuse(name, method, exp_except, request):
     # Login
     context.api.login(method)
 
+    assert context.api.login_active
     assert context.api.login_info.login_method is not None
     assert login_info is not None
     assert access_token_info is not None

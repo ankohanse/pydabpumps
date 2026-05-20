@@ -83,11 +83,13 @@ async def test_login(name, method, usr, pwd, exp_except, request):
     assert context.api.closed == False
 
     if exp_except is None:
+        assert not context.api.login_active
         assert context.api.login_info is not None
         assert context.api.login_info.login_method is None
 
         await context.api.login(method)
 
+        assert context.api.login_active
         assert context.api.login_info is not None
         assert context.api.login_info.login_method is not None
 
@@ -130,6 +132,7 @@ async def test_login_seq(name, usr, pwd, exp_except, request):
     # First call with wrong pwd
     context.api = AsyncDabPumps(usr, "wrong_pwd")
     assert context.api.closed == False
+    assert not context.api.login_active
     assert context.api.login_info is not None
     assert context.api.login_info.login_method is None
 
@@ -139,12 +142,14 @@ async def test_login_seq(name, usr, pwd, exp_except, request):
     # Next call with correct pwd
     context.api = AsyncDabPumps(usr, pwd)
     assert context.api.closed == False
+    assert not context.api.login_active
     assert context.api.login_info is not None
     assert context.api.login_info.login_method is None
 
     if exp_except is None:
         await context.api.login()
 
+        assert context.api.login_active
         assert context.api.login_info is not None
         assert context.api.login_info.login_method is not None
         assert context.api.install_map is not None
@@ -548,6 +553,7 @@ async def test_callbacks(name, method, exp_li, exp_at, exp_rt, exp_d, exp_except
     # Login
     await context.api.login(method)
 
+    assert context.api.login_active
     assert context.api.login_info.login_method is not None
     assert counter_login_info == exp_li
     assert counter_access_token == exp_at
@@ -635,6 +641,7 @@ async def test_token_reuse(name, method, exp_except, request):
     # Login
     await context.api.login(method)
 
+    assert context.api.login_active
     assert context.api.login_info.login_method is not None
     assert login_info is not None
     assert access_token_info is not None
