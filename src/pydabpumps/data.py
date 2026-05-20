@@ -7,6 +7,7 @@ from enum import StrEnum
 from .const import (
     DABCS_API_DOMAIN,
     DCONNECT_API_DOMAIN,
+    DCONNECT_APP_USER_AGENT,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -185,18 +186,39 @@ class DabPumpsAuth(StrEnum):
 
 @dataclass
 class DabPumpsLoginInfo():
-    login_method: DabPumpsLogin
+    login_method: DabPumpsLogin = None
+
+    @property
+    def fetch_method(self) -> DabPumpsFetch:
+        match self.login_method:
+            case None:                  return None
+            case DabPumpsLogin.H2D_APP: return DabPumpsFetch.DABCS
+            case _:                     return DabPumpsFetch.DCONNECT
+
+    @property
+    def auth_method(self) -> DabPumpsAuth:
+        match self.login_method:
+            case None:                       return None
+            case DabPumpsLogin.DCONNECT_WEB: return DabPumpsAuth.COOKIE
+            case _:                          return DabPumpsAuth.HEADER
+    
+    @property
+    def extra_headers(self) -> dict[str,str]:
+        match self.login_method:
+            case None:                       return None
+            case DabPumpsLogin.DCONNECT_WEB: return { "User-Agent": DCONNECT_APP_USER_AGENT }
+            case _:                          return {}
 
 
 @dataclass
 class DabPumpsAccessTokenInfo():
-    token: str
-    expiry: datetime
+    token: str = None
+    expiry: datetime = None
 
     def __post_init__(self):
         """
         Custom processing in case the dataclass was constructed from a dict
-        status = DabPumpsAccessTokenInfo(**dict)
+        info = DabPumpsAccessTokenInfo(**dict)
         """
         if self.expiry and isinstance(self.expiry, str):
             self.expiry = datetime.fromisoformat(self.expiry)
@@ -204,15 +226,15 @@ class DabPumpsAccessTokenInfo():
 
 @dataclass
 class DabPumpsRefreshTokenInfo():
-    token: str
-    expiry: datetime
-    client_id: str
-    client_secret: str
+    token: str = None
+    expiry: datetime = None
+    client_id: str = None
+    client_secret: str = None
 
     def __post_init__(self):
         """
         Custom processing in case the dataclass was constructed from a dict
-        status = DabPumpsRefreshTokenInfo(**dict)
+        info = DabPumpsRefreshTokenInfo(**dict)
         """
         if self.expiry and isinstance(self.expiry, str):
             self.expiry = datetime.fromisoformat(self.expiry)

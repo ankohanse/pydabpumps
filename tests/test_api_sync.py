@@ -86,17 +86,21 @@ def test_login(name, method, usr, pwd, exp_except, request):
     assert context.api.closed == False
 
     if exp_except is None:
-        assert context.api.login_method is None
+        assert context.api.login_info is not None
+        assert context.api.login_info.login_method is None
 
         context.api.login(method)
 
-        assert context.api.login_method is not None
+        assert context.api.login_info is not None
+        assert context.api.login_info.login_method is not None
 
         if method != DabPumpsLogin.DCONNECT_WEB:
-            assert context.api._access_token is not None
-            assert context.api._access_expiry > datetime.min
-            assert context.api._refresh_token is not None
-            assert context.api._refresh_expiry > datetime.min
+            assert context.api.access_token_info is not None
+            assert context.api.access_token_info.token is not None
+            assert context.api.access_token_info.expiry > datetime.min
+            assert context.api.refresh_token_info is not None
+            assert context.api.refresh_token_info.token is not None
+            assert context.api.refresh_token_info.expiry > datetime.min
 
         assert context.api.install_map is not None
         assert context.api.device_map is not None
@@ -129,7 +133,8 @@ def test_login_seq(name, usr, pwd, exp_except, request):
     # First call with wrong pwd
     context.api = DabPumps(usr, "wrong_pwd")
     assert context.api.closed == False
-    assert context.api.login_method is None
+    assert context.api.login_info is not None
+    assert context.api.login_info.login_method is None
 
     with pytest.raises(DabPumpsAuthError):
         context.api.login()
@@ -137,12 +142,14 @@ def test_login_seq(name, usr, pwd, exp_except, request):
     # Next call with correct pwd
     context.api = DabPumps(usr, pwd)
     assert context.api.closed == False
-    assert context.api.login_method is None
+    assert context.api.login_info is not None
+    assert context.api.login_info.login_method is None
 
     if exp_except is None:
         context.api.login()
 
-        assert context.api.login_method is not None
+        assert context.api.login_info is not None
+        assert context.api.login_info.login_method is not None
         assert context.api.install_map is not None
         assert context.api.device_map is not None
         assert context.api.config_map is not None
@@ -189,7 +196,7 @@ def test_get_data(name, method, loop, exp_except, request):
     # Login
     context.api.login(method)
 
-    login_method_org = context.api.login_method
+    login_method_org = context.api.login_info.login_method
 
     # Get install list
     context.api.fetch_install_list()
@@ -261,7 +268,7 @@ def test_get_data(name, method, loop, exp_except, request):
         try:
             # Check access-token and refresh or re-login if needed
             context.api.login()
-            assert login_method_org == context.api.login_method
+            assert login_method_org == context.api.login_info.login_method
 
             context.api.fetch_install_statuses(install_id)
 
@@ -292,7 +299,7 @@ def test_get_data(name, method, loop, exp_except, request):
             #    await context.api._logout("login force refresh", DabPumpsLogin.ACCESS_TOKEN)
 
             if method != "Auto":
-                context.api._login_method = method
+                context.api._login_info.login_method = method
 
             _LOGGER.debug(f"Loop test, {idx} of {loop} (success={counter_success}, fail={counter_fail})")
             time.sleep(60)
@@ -544,7 +551,7 @@ def test_callbacks(name, method, exp_li, exp_at, exp_rt, exp_d, exp_except, requ
     # Login
     context.api.login(method)
 
-    assert context.api._login_method is not None
+    assert context.api.login_info.login_method is not None
     assert counter_login_info == exp_li
     assert counter_access_token == exp_at
     assert counter_refresh_token == exp_rt
@@ -631,7 +638,7 @@ def test_token_reuse(name, method, exp_except, request):
     # Login
     context.api.login(method)
 
-    assert context.api._login_method is not None
+    assert context.api.login_info.login_method is not None
     assert login_info is not None
     assert access_token_info is not None
     assert refresh_token_info is not None
