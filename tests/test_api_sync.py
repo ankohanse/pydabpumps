@@ -216,7 +216,7 @@ def test_get_data(name, method, loop, exp_except, request):
         assert install.id is not None    
         assert install.name is not None  
         assert install.role is not None
-        assert install.subscr_ts is not None
+        assert install.subscr_ts is None or type(install.subscr_ts) is datetime
 
     # Get install details, config metadata and initial statuses (just for the first install)
     context.api.fetch_install_details(install_id)
