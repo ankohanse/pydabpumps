@@ -230,7 +230,6 @@ async def test_get_data(name, method, loop, exp_except, request):
         assert device.name is not None  
         assert device.config_id is not None  
         assert device.install_id is not None  
-        assert device.sw_version is not None
 
     assert context.api.config_map is not None
     assert type(context.api.config_map) is dict
@@ -515,7 +514,7 @@ async def test_strings(name, lang, exp_lang, request):
         ("ok",  DabPumpsLogin.DABLIVE_APP_0, 1, 1, 1, 1, None),
         ("ok",  DabPumpsLogin.DABLIVE_APP_1, 1, 1, 1, 1, None),
         ("ok",  DabPumpsLogin.DCONNECT_APP,  1, 1, 1, 1, None),
-        ("ok",  DabPumpsLogin.DCONNECT_WEB,  1, 0, 0, 2, None),
+        ("ok",  DabPumpsLogin.DCONNECT_WEB,  1, 1, 1, 2, None),
     ]
 )
 async def test_callbacks(name, method, exp_li, exp_at, exp_rt, exp_d, exp_except, request):

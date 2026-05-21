@@ -261,11 +261,11 @@ class DabPumpsHistoryItem:
             if "status" in response:
                 rsp_parts.append(response["status"])
             
-            if json := response.get("json", None):
-                if res := json.get('res', ''): rsp_parts.append(f"res={res}")
-                if code := json.get('code', ''): rsp_parts.append(f"code={code}")
-                if msg := json.get('msg', ''): rsp_parts.append(f"msg={msg}")
-                if details := json.get('details', ''): rsp_parts.append(f"details={details}")
+            if json := response.get("json"):
+                if res := json.get('res') or '': rsp_parts.append(f"res={res}")
+                if code := json.get('code') or '': rsp_parts.append(f"code={code}")
+                if msg := json.get('msg') or '': rsp_parts.append(f"msg={msg}")
+                if details := json.get('details') or '': rsp_parts.append(f"details={details}")
 
             item.rsp = ', '.join(rsp_parts)
 

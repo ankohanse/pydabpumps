@@ -725,7 +725,8 @@ class DabPumps:
             )
 
         # Only clear login_method when called from an external context
-        if not context:
+        # or when actual data retrieval failed. Not when we are in a login context.
+        if not context.startswith("login"):
             self._login_info = DabPumpsLoginInfo(
                 login_method = None
             )
@@ -787,25 +788,25 @@ class DabPumps:
         #   ]
         # }
         install_map = {}
-        installations = raw.get('installations', None) or raw.get('values', None) or raw.get('rows', None) or []
+        installations = raw.get('installations') or raw.get('values') or raw.get('rows') or []
         
         for install_idx, installation in enumerate(installations):
             
-            install_id = installation.get('installation_id', '')
-            install_name = installation.get('name', None) or installation.get('description', None) or f"installation {install_idx}"
-            install_meta = installation.get('metadata', {})
-            subscription = installation.get('current_user_subscription', {})
+            install_id = installation.get('installation_id') or ''
+            install_name = installation.get('name') or installation.get('description') or f"installation {install_idx}"
+            install_meta = installation.get('metadata') or {}
+            subscription = installation.get('current_user_subscription') or {}
 
             _LOGGER.debug(f"Installation found: {install_name}")
             install = DabPumpsInstall(
                 id = install_id,
                 name = install_name,
-                description = installation.get('description', None) or '',
-                company = installation.get('company', None) or install_meta.get('company', None) or '',
-                address = installation.get('address', None) or install_meta.get('address', None) or '',
-                role = installation.get('current_user_role', None) or installation.get('user_role', None) or DabPumpsUserRole.CUSTOMER_FREE,
-                subscr_ts = subscription.get('subscription_due_date', None) or installation.get('contract_due_date', None) or None,
-                devices = len(installation.get('dums', None) or []),
+                description = installation.get('description') or '',
+                company = installation.get('company') or install_meta.get('company') or '',
+                address = installation.get('address') or install_meta.get('address') or '',
+                role = installation.get('current_user_role') or installation.get('user_role') or DabPumpsUserRole.CUSTOMER_FREE,
+                subscr_ts = subscription.get('subscription_due_date') or installation.get('contract_due_date') or None,
+                devices = len(installation.get('dums') or []),
             )
             install_map[install_id] = install
 
@@ -903,14 +904,14 @@ class DabPumps:
         #   ]
         # }
         device_map = {}
-        ins_dums = raw.get('dums', [])
+        ins_dums = raw.get('dums') or []
 
         for dum_idx, dum in enumerate(ins_dums):
-            dum_serial = dum.get('serial', None) or ''
-            dum_name = dum.get('name', None) or dum.get('ProductName', None) or f"device {dum_idx}"
-            dum_product = dum.get('ProductName', None) or dum.get('distro_embedded', None) or f"device {dum_idx}"
-            dum_version = dum.get('configuration_name', None) or dum.get('distro_embedded', None) or ''
-            dum_config = dum.get('configuration_id', None) or ''
+            dum_serial = dum.get('serial') or ''
+            dum_name = dum.get('name') or dum.get('ProductName') or f"device {dum_idx}"
+            dum_product = dum.get('ProductName') or dum.get('distro_embedded') or f"device {dum_idx}"
+            dum_version = dum.get('configuration_name') or dum.get('distro_embedded') or ''
+            dum_config = dum.get('configuration_id') or ''
 
             if not dum_serial: 
                 raise DabPumpsDataError(f"Could not find installation attribute 'serial'")
@@ -971,7 +972,7 @@ class DabPumps:
                 #     }
                 #   ]
                 # }
-                ins_configs = raw_install_data.get('configurations', [])
+                ins_configs = raw_install_data.get('configurations') or []
 
                 for ins_config_id, ins_config in ins_configs.items():
                     if ins_config_id == config_id:
@@ -997,7 +998,7 @@ class DabPumps:
         # Process the resulting raw data
         config_map = {}
 
-        conf_id = conf_id or conf.get('configuration_id', '')
+        conf_id = conf_id or conf.get('configuration_id') or ''
         conf_name = conf.get('name') or conf.get('ProductName') or f"config {conf_id}"
         conf_label = conf.get('label') or conf.get('family') or f"config {conf_id}"
         conf_descr = conf.get('description') or conf.get('ProductName') or f"config {conf_id}"
@@ -1065,7 +1066,7 @@ class DabPumps:
         # Process the existing data
         status_map = {}
 
-        device = self._device_map.get(serial, None)
+        device = self._device_map.get(serial)
         if not device:
             return
 
@@ -1129,10 +1130,10 @@ class DabPumps:
                 #     { "configuration_id": "guid3", "serial": "some_str", "statusts": "some_ts, "status": { ... }, ... }
                 #   ]
                 # }
-                ins_dums = raw_install_data.get('dums', [])
+                ins_dums = raw_install_data.get('dums') or []
             
                 for dum in ins_dums:
-                    dum_serial = dum.get('serial', None) or ''
+                    dum_serial = dum.get('serial') or ''
                     if dum_serial == serial:
                         statusts = dum.get('statusts') or ""
                         lastrecv = dum.get('lastreceived') or ""
@@ -1176,7 +1177,7 @@ class DabPumps:
                 # We keep the updated value for a hold period to prevent it from flipping back and forth 
                 # between its old value and new value because of delays in update on the DAB server side.
                 status_key = DabPumps.create_id(serial, item_key)
-                status_old = self._status_actual_map.get(status_key, None)
+                status_old = self._status_actual_map.get(status_key)
 
                 if status_old and status_old.update_ts is not None and \
                 (utcnow() - status_old.update_ts).total_seconds() < STATUS_UPDATE_HOLD:
@@ -1228,7 +1229,7 @@ class DabPumps:
                 continue
                 
             # Status can be removed
-            self._status_actual_map.pop(status_key, None)
+            self._status_actual_map.pop(status_key)
         
         
     def _derive_device_details(self, serial: str):
@@ -1272,7 +1273,7 @@ class DabPumps:
         
         status_key = DabPumps.create_id(serial, key)  
 
-        status = self._status_actual_map.get(status_key, None) or self._status_static_map.get(status_key, None)
+        status = self._status_actual_map.get(status_key) or self._status_static_map.get(status_key)
         if not status:
             # Not found
             return False
@@ -1411,8 +1412,8 @@ class DabPumps:
         #   },
         #   ...
         # }
-        language = raw.get('bundle', '')
-        messages = raw.get('messages', {})
+        language = raw.get('bundle') or ''
+        messages = raw.get('messages') or {}
         string_map = { k: v for k, v in messages.items() }
         
         # Sanity check. # Never overwrite a known string_map with empty lists
@@ -1434,7 +1435,7 @@ class DabPumps:
         status_key = DabPumps.create_id(serial, key)
 
         # Return status for this key; decoding and translation of code into value is already done.
-        return self._status_actual_map.get(status_key, None) or self._status_static_map.get(status_key, None)
+        return self._status_actual_map.get(status_key) or self._status_static_map.get(status_key)
 
 
     def get_status_metadata(self, serial: str, key: str, translate:bool = True) -> DabPumpsParams:
@@ -1443,9 +1444,9 @@ class DabPumps:
         """
 
         # Find the meta params for this status
-        device = self._device_map.get(serial, None) if self._device_map else None
-        config = self._config_map.get(device.config_id, None) if device is not None and self._config_map  else None
-        params = config.meta_params.get(key, None) if config is not None and config.meta_params else None
+        device = self._device_map.get(serial) if self._device_map else None
+        config = self._config_map.get(device.config_id) if device is not None and self._config_map  else None
+        params = config.meta_params.get(key) if config is not None and config.meta_params else None
 
         # Apply translations
         if translate and params is not None and params.values is not None:
@@ -1502,9 +1503,9 @@ class DabPumps:
         """
 
         # Find the meta params for this status
-        device = self._device_map.get(serial, None) if self._device_map else None
-        config = self._config_map.get(device.config_id, None) if device is not None and self._config_map  else None
-        params = config.meta_params.get(key, None) if config is not None and config.meta_params else None
+        device = self._device_map.get(serial) if self._device_map else None
+        config = self._config_map.get(device.config_id) if device is not None and self._config_map  else None
+        params = config.meta_params.get(key) if config is not None and config.meta_params else None
 
         if params is None or value is None:
             return str(value)
@@ -1546,7 +1547,7 @@ class DabPumps:
         """GET or POST a request for JSON data"""
 
         timestamp = datetime.now()
-        flags = request.get("flags", {})
+        flags = request.get("flags") or {}
         flags_redirects = flags.get("redirects", True)
         flags_authorize = flags.get("authorize", True)
 
@@ -1570,10 +1571,10 @@ class DabPumps:
             req = self._http_client.build_request(
                 method = request["method"],
                 url = request["url"],
-                params = request.get("params", None), 
-                data = request.get("data", None),
-                json = request.get("json", None),
-                headers = request.get("headers", None),
+                params = request.get("params"), 
+                data = request.get("data"),
+                json = request.get("json"),
+                headers = request.get("headers"),
                 timeout = httpx.Timeout(HTTPX_REQUEST_TIMEOUT),
             )
             rsp = self._http_client.send(req, follow_redirects=flags_redirects)
@@ -1616,8 +1617,8 @@ class DabPumps:
             else:
                 raise DabPumpsConnectError(error)
         
-        if flags.get("redirects",None) == False and response['status'].startswith("302"):
-            return response["headers"].get("location", '')
+        if not flags_redirects and response['status'].startswith("302"):
+            return response["headers"].get("location") or ''
 
         elif "text" in response:
             return response["text"]
@@ -1625,11 +1626,11 @@ class DabPumps:
         elif "json" in response:
             # if the result structure contains a 'res' value, then check it
             json = response["json"]
-            res = json.get('res', None)
+            res = json.get('res')
             if res and res != 'OK':
                 # BAD RESPONSE: { "res": "ERROR", "code": "FORBIDDEN", "msg": "Forbidden operation", "where": "ROUTE RULE" }
-                code = json.get('code', '')
-                msg = json.get('msg', '')
+                code = json.get('code') or ''
+                msg = json.get('msg') or ''
                 
                 if code.upper() in ['FORBIDDEN', 'WRONGCREDENTIAL']:
                     error = f"Authorization failed: {res} {code} {msg}"
