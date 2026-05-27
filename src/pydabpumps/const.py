@@ -40,8 +40,11 @@ DEVICE_ATTR_EXTRA = {
 
 # Known device statuses that normally don't hold a value until an action occurs
 DEVICE_STATUS_STATIC = {
-    "PowerShowerCountdown",
-    "SleepModeCountdown",
+    "PowerShowerCountdown",         # ESybox pumps
+    "SleepModeCountdown",           # ESybox pumps
+    "Regulation T Max",             # EvoPlus pumps
+    "Economy Setpoint Reduction",   # EvoPlus pumps
+    "Reboot",                       # DConnext box 1
 }
 
 HTTPX_REQUEST_TIMEOUT = 20.0
