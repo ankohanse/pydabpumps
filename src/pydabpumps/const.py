@@ -42,6 +42,8 @@ DEVICE_ATTR_EXTRA = {
 DEVICE_STATUS_STATIC = {
     "PowerShowerCountdown",         # ESybox pumps
     "SleepModeCountdown",           # ESybox pumps
+    "Setpoint RPM",                 # EvoPlus pumps
+    "Regulation Setpoint",          # EvoPlus pumps
     "Regulation T Max",             # EvoPlus pumps
     "Economy Setpoint Reduction",   # EvoPlus pumps
     "Reboot",                       # DConnext box 1
