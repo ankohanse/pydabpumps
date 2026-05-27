@@ -1167,10 +1167,10 @@ class DabPumps:
 
         for item_key, item_code in values.items():
             try:
-                # the code 'h' is used when a property is not available/supported
+                # the codes 'd' and 'h' are used when a property is disabled or hidden.
                 # Note the some properties (PowerShowerCountdown, SleepModeCountdown) can switch between 
                 # availabe (and be in _status_actual_map) and unavailable (still be in _status_static_map).
-                if item_code=='h':
+                if item_code in ['d', 'h']:
                     continue
 
                 # Check if this status was recently updated via change_device_status
