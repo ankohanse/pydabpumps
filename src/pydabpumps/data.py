@@ -46,10 +46,12 @@ class DabPumpsAuth(StrEnum):
 
 class DabPumpsUserRole(StrEnum):
     CUSTOMER = "CUSTOMER"
+    CUSTOMER_PRO = "CUSTOMER-PRO"
     CUSTOMER_FREE = "CUSTOMER_FREE"
     INSTALLER = "INSTALLER"
     INSTALLER_FREE = "INSTALLER_FREE"
-    INSTALLER_LOCAL = "LOCALINSTALLER"
+    LOCAL_INSTALLER = "LOCALINSTALLER"
+    LOCAL_CONFIG = "LOCALCONFIG"
     SERVICE = "SERVICE"
     R_AND_D = "R&D"
 
@@ -57,10 +59,12 @@ class DabPumpsUserRole(StrEnum):
     def to_char(role: str):
         match role:
             case DabPumpsUserRole.CUSTOMER: return 'C'
+            case DabPumpsUserRole.CUSTOMER_PRO: return 'C'  # mapped to just Customer
             case DabPumpsUserRole.CUSTOMER_FREE: return 'c'
             case DabPumpsUserRole.INSTALLER: return 'I'
             case DabPumpsUserRole.INSTALLER_FREE: return 'i'
-            case DabPumpsUserRole.INSTALLER_LOCAL: return 'L'
+            case DabPumpsUserRole.LOCAL_INSTALLER: return 'L'
+            case DabPumpsUserRole.LOCAL_CONFIG: return 'l'
             case DabPumpsUserRole.SERVICE: return 'S'
             case DabPumpsUserRole.R_AND_D: return 'R'
             case _: return 'C'
