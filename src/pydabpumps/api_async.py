@@ -1019,7 +1019,7 @@ class AsyncDabPumps:
             param_group = meta_param.get('group') or ''
             
             values = meta_param.get('values') or []
-            param_values = { str(v[0]): str(v[1]) for v in values if len(v) >= 2 }
+            param_values = { str(v[0]): self._translate_string(str(v[1])) for v in values if len(v) >= 2 }
             
             param = DabPumpsParams(
                 key = param_name,
@@ -1435,7 +1435,7 @@ class AsyncDabPumps:
         return self._status_actual_map.get(status_key) or self._status_static_map.get(status_key)
 
 
-    def get_status_metadata(self, serial: str, key: str, translate:bool = True) -> DabPumpsParams:
+    def get_status_metadata(self, serial: str, key: str) -> DabPumpsParams:
         """
         Resolve meta params for a status
         """
@@ -1445,12 +1445,7 @@ class AsyncDabPumps:
         config = self._config_map.get(device.config_id) if device is not None and self._config_map  else None
         params = config.meta_params.get(key) if config is not None and config.meta_params else None
 
-        # Apply translations
-        if translate and params is not None and params.values is not None:
-            params = replace(params, values = { k:self._translate_string(v) for k,v in params.values.items() })
-
         return params
-
 
     def _decode_status_value(self, serial: str, key: str, code: str) -> Any:
         """
@@ -1459,7 +1454,9 @@ class AsyncDabPumps:
         """
 
         # Find the meta params for this status
-        params = self.get_status_metadata(serial, key, translate=False)
+        device = self._device_map.get(serial) if self._device_map else None
+        config = self._config_map.get(device.config_id) if device is not None and self._config_map  else None
+        params = config.meta_params.get(key) if config is not None and config.meta_params else None
 
         if params is None or code is None:
             return (code, '')
@@ -1467,9 +1464,8 @@ class AsyncDabPumps:
         # param:DabPumpsParams - 'key, type, unit, weight, values, min, max, family, group, view, change, log, report'
         match params.type:
             case DabPumpsParamType.ENUM:
-                # Lookup value and translate
-                val = params.values.get(code, code) if params.values is not None else code 
-                value = self._translate_string(val)
+                # Lookup value (already translated)
+                value = params.values.get(code, code) if params.values is not None else code 
 
             case DabPumpsParamType.MEASURE:
                 if code != '':
@@ -1624,7 +1620,7 @@ class AsyncDabPumps:
             # if the result structure contains a 'res' value, then check it
             json = response["json"]
             res = json.get('res')
-            if res and res != 'OK':
+            if res and res != 'OK' and res != 'SCHEDULED':
                 # BAD RESPONSE: { "res": "ERROR", "code": "FORBIDDEN", "msg": "Forbidden operation", "where": "ROUTE RULE" }
                 code = json.get('code') or ''
                 msg = json.get('msg') or ''

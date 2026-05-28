@@ -339,7 +339,7 @@ async def test_get_data(name, method, loop, exp_except, request):
         (DabPumpsLogin.DCONNECT_WEB,  "Identify",                ["1"],         "0", None), # Falls back to 0 after STATUS_UPDATE_HOLD
     ]
 )
-async def test_set_data(method, key, codes, exp_code, exp_except, request):
+async def test_set_data_by_code(method, key, codes, exp_code, exp_except, request):
     context = request.getfixturevalue("context")
     context.api = AsyncDabPumps(TEST_USERNAME, TEST_PASSWORD)
     assert context.api.closed == False
@@ -409,6 +409,88 @@ async def test_set_data(method, key, codes, exp_code, exp_except, request):
         assert status.update_ts is not None
 
         _LOGGER.debug(f"Found value changed back from {new_code} to {old_code}")
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("context")
+@pytest.mark.parametrize(
+    "method, key, lang, exp_value, exp_except",
+    [
+        (None, "SleepModeEnable",    "en", "=", None),
+        (None, "SleepModeEnable",    "nl", "=", None),
+    ]
+)
+async def test_set_data_by_value(method, key, lang, exp_value, exp_except, request):
+    context = request.getfixturevalue("context")
+    context.api = AsyncDabPumps(TEST_USERNAME, TEST_PASSWORD)
+    assert context.api.closed == False
+
+    # Login and get install list
+    await context.api.login(method)
+    await context.api.fetch_strings(lang)
+    await context.api.fetch_install_list()
+
+    assert context.api.install_map is not None
+    assert type(context.api.install_map) is dict
+    assert len(context.api.install_map) > 0
+
+    # Get install details, metadata and initial statuses
+    for install_id in context.api.install_map:
+        await context.api.fetch_install_details(install_id)
+
+    # Check config param
+    status = next( (status for status in context.api.status_map.values() if status.key==key), None)
+    assert status is not None
+
+    device = context.api.device_map.get(status.serial)
+    install = context.api.install_map.get(device.install_id)
+    config = context.api.config_map.get(device.config_id)
+    param = config.meta_params.get(status.key)
+
+    if install.role[0] not in param.change:
+        # Not allowed to change this param with this user account. Skip test
+        _LOGGER.debug(f"User '{TEST_USERNAME}' is not allowed to set {key}. Skip test")
+        return
+
+    # Find current code and value and find a new code to change into
+    old_value = status.value
+    new_value = next( (val for key,val in param.values.items() if val != old_value), None )
+
+    # Change device status and do immediate test of changed value. 
+    # We hold the changed value while the backend is processing the change.
+    changed = await context.api.change_device_status(status.serial, status.key, value=new_value)
+    if changed:
+        await context.api.fetch_install_statuses(install_id)
+
+        status = next( (status for status in context.api.status_map.values() if status.key==key), None)
+        assert status.value == new_value
+        assert status.update_ts is not None
+        _LOGGER.debug(f"Found value changed from {old_value} to {new_value}")
+
+        # Wait until the backend has processed the change and test again
+        _LOGGER.debug(f"Wait for DAB Servers to process the change")
+        await asyncio.sleep(40)
+        await context.api.login()
+
+    # Test after change has been processed by backend
+    await context.api.fetch_install_statuses(install_id)
+
+    status = next( (status for status in context.api.status_map.values() if status.key==key), None)
+    assert status.value == new_value if exp_value == "=" else exp_value
+    assert status.update_ts is None
+
+    _LOGGER.debug(f"Found value still changed from {old_value} to {new_value}")
+
+    # Change back to original value and do immediate test of changed value
+    changed = await context.api.change_device_status(status.serial, status.key, value=old_value)
+    if changed:
+        await context.api.fetch_install_statuses(install_id)
+
+        status = next( (status for status in context.api.status_map.values() if status.key==key), None)
+        assert status.value == old_value
+        assert status.update_ts is not None
+
+        _LOGGER.debug(f"Found value changed back from {new_value} to {old_value}")
 
 
 @pytest.mark.asyncio
@@ -774,33 +856,30 @@ async def string_map():
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("context", "device_map", "config_map", "string_map")
+@pytest.mark.usefixtures("context", "device_map", "config_map")
 @pytest.mark.parametrize(
-    "name, serial, key, translate, code, exp_value",
+    "name, serial, key, code, exp_value",
     [
-        ("device unknown", 'SERIAL_XX', 'KEY_ENUM', True, '2', ('2', '')),
-        ("key unknown", 'SERIAL', 'KEY_XX', True, '2', ('2', '')),
-        ("enum ok", "SERIAL", 'KEY_ENUM', False, '2', ('two', None)),
-        ("enum ok", "SERIAL", 'KEY_ENUM', True, '2', ('twee', None)),
-        ("enum no", "SERIAL", 'KEY_ENUM', False, '4', ('4', None)),
-        ("enum no", "SERIAL", 'KEY_ENUM', True, '4', ('4', None)),
-        ("float ok", "SERIAL", 'KEY_FLOAT', True, '2', (0.2, 'F')),
-        ("float min", "SERIAL", 'KEY_FLOAT', True, '-1', (-0.1, 'F')),
-        ("float max", "SERIAL", 'KEY_FLOAT', True, '11', (1.1, 'F')),
-        ("int ok", "SERIAL", 'KEY_INT', True, '2', (2, 'I')),
-        ("int min", "SERIAL", 'KEY_INT', True, '-1', (-1, 'I')),
-        ("int max", "SERIAL", 'KEY_INT', True, '11', (11, 'I')),
-        ("label ok", "SERIAL", 'KEY_LABEL', True, 'ABC', ('ABC', '')),
+        ("device unknown", 'SERIAL_XX', 'KEY_ENUM', '2', ('2', '')),
+        ("key unknown", 'SERIAL', 'KEY_XX', '2', ('2', '')),
+        ("enum ok", "SERIAL", 'KEY_ENUM', '2', ('two', None)),
+        ("enum no", "SERIAL", 'KEY_ENUM', '4', ('4', None)),
+        ("enum no", "SERIAL", 'KEY_ENUM', '4', ('4', None)),
+        ("float ok", "SERIAL", 'KEY_FLOAT', '2', (0.2, 'F')),
+        ("float min", "SERIAL", 'KEY_FLOAT', '-1', (-0.1, 'F')),
+        ("float max", "SERIAL", 'KEY_FLOAT', '11', (1.1, 'F')),
+        ("int ok", "SERIAL", 'KEY_INT', '2', (2, 'I')),
+        ("int min", "SERIAL", 'KEY_INT', '-1', (-1, 'I')),
+        ("int max", "SERIAL", 'KEY_INT', '11', (11, 'I')),
+        ("label ok", "SERIAL", 'KEY_LABEL', 'ABC', ('ABC', '')),
     ]
 )
-async def test_decode(name, serial, key, translate, code, exp_value, request):
+async def test_decode(name, serial, key, code, exp_value, request):
     context = request.getfixturevalue("context")
     context.api = AsyncDabPumps("dummy_usr", "wrong_pwd") # no login needed
 
     context.api._device_map = request.getfixturevalue("device_map")
     context.api._config_map = request.getfixturevalue("config_map")
-    if translate:
-        context.api._string_map = request.getfixturevalue("string_map")
 
     value = context.api._decode_status_value(serial, key, code)
     assert value == exp_value
@@ -877,19 +956,18 @@ async def test_status(name, serial, key, exp_code, exp_value, exp_unit, request)
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("context", "device_map", "config_map", "status_map", "string_map")
 @pytest.mark.parametrize(
-    "name, serial, key, translate, exp_type, exp_values, exp_unit",
+    "name, serial, key, exp_type, exp_values, exp_unit",
     [
-        ("device unknown", 'SERIAL_XX', 'KEY_ENUM', False, None, None, None),
-        ("device unknown", 'SERIAL_XX', 'KEY_ENUM', False, None, None, None),
-        ("key unknown", 'SERIAL', 'KEY_XX', False, None, None, None),
-        ("enum ok", "SERIAL", 'KEY_ENUM', False, DabPumpsParamType.ENUM, {'1':'one', '2':'two', '3':'three'}, None),
-        ("enum ok", "SERIAL", 'KEY_ENUM', True, DabPumpsParamType.ENUM, {'1':'een', '2':'twee', '3':'drie'}, None),
-        ("float ok", "SERIAL", 'KEY_FLOAT', False, DabPumpsParamType.MEASURE, None, 'F'),
-        ("int ok", "SERIAL", 'KEY_INT', False, DabPumpsParamType.MEASURE, None, 'I'),
-        ("label ok", "SERIAL", 'KEY_LABEL', False, DabPumpsParamType.LABEL, None, ''),
+        ("device unknown", 'SERIAL_XX', 'KEY_ENUM', None, None, None),
+        ("device unknown", 'SERIAL_XX', 'KEY_ENUM', None, None, None),
+        ("key unknown", 'SERIAL', 'KEY_XX', None, None, None),
+        ("enum ok", "SERIAL", 'KEY_ENUM', DabPumpsParamType.ENUM, {'1':'one', '2':'two', '3':'three'}, None),
+        ("float ok", "SERIAL", 'KEY_FLOAT', DabPumpsParamType.MEASURE, None, 'F'),
+        ("int ok", "SERIAL", 'KEY_INT', DabPumpsParamType.MEASURE, None, 'I'),
+        ("label ok", "SERIAL", 'KEY_LABEL', DabPumpsParamType.LABEL, None, ''),
     ]
 )
-async def test_metadata(name, serial, key, translate, exp_type, exp_values, exp_unit, request):
+async def test_metadata(name, serial, key, exp_type, exp_values, exp_unit, request):
     context = request.getfixturevalue("context")
     context.api = AsyncDabPumps("dummy_usr", "wrong_pwd") # no login needed
 
@@ -899,7 +977,7 @@ async def test_metadata(name, serial, key, translate, exp_type, exp_values, exp_
     context.api._status_static_map = {}
     context.api._string_map = request.getfixturevalue("string_map")
 
-    params = context.api.get_status_metadata(serial, key, translate=translate)
+    params = context.api.get_status_metadata(serial, key)
     if exp_type is None:
         assert params is None
     else:
