@@ -1,6 +1,6 @@
 [project]
 name = "pydabpumps"
-version = "1.5.3"
+version = "1.5.4"
 authors = [
   { name="Anko Hanse", email="anko_hanse@hotmail.com" },
 ]

@@ -1086,7 +1086,7 @@ class AsyncDabPumps:
             if params.type == DabPumpsParamType.ENUM and len(params.values or []) == 1:
                 is_static = True
                 code = str(params.min) if params.min is not None else "0"
-                value = ""
+                (value, _) = self._decode_status_value(serial, params.key, code)
 
             # Add other static params types here in future
             pass
@@ -1458,8 +1458,11 @@ class AsyncDabPumps:
         config = self._config_map.get(device.config_id) if device is not None and self._config_map  else None
         params = config.meta_params.get(key) if config is not None and config.meta_params else None
 
-        if params is None or code is None:
+        if params is None:
             return (code, '')
+        
+        if code is None:
+            return (code, params.unit)
         
         # param:DabPumpsParams - 'key, type, unit, weight, values, min, max, family, group, view, change, log, report'
         match params.type:
