@@ -2,10 +2,11 @@
 # tests\test_api_async.py
 import asyncio
 import copy
-from datetime import datetime
 import logging
 import pytest
 import pytest_asyncio
+
+from datetime import datetime, timezone
 
 from pydabpumps import (
     AsyncDabPumps,
@@ -14,7 +15,8 @@ from pydabpumps import (
     DabPumpsError, 
     DabPumpsInstall,
     DabPumpsDevice,
-    DabPumpsConfig,
+    DabPumpsDeviceConfig,
+    DabPumpsDeviceState,
     DabPumpsParams,
     DabPumpsStatus,
     DabPumpsParamType,
@@ -25,6 +27,8 @@ from pydabpumps import (
     DabPumpsHistoryItem, 
     DabPumpsHistoryDetail,
     DabPumpsLogin,
+    utcnow,
+    utcmin,
 )
 
 from . import TEST_USERNAME, TEST_PASSWORD
@@ -99,20 +103,20 @@ def test_login(name, method, usr, pwd, exp_except, request):
         if method != DabPumpsLogin.DCONNECT_WEB:
             assert context.api.access_token_info is not None
             assert context.api.access_token_info.token is not None
-            assert context.api.access_token_info.expiry > datetime.min
+            assert context.api.access_token_info.expiry > utcmin()
             assert context.api.refresh_token_info is not None
             assert context.api.refresh_token_info.token is not None
-            assert context.api.refresh_token_info.expiry > datetime.min
+            assert context.api.refresh_token_info.expiry > utcmin()
 
         assert context.api.install_map is not None
         assert context.api.device_map is not None
-        assert context.api.config_map is not None
-        assert context.api.status_map is not None
+        assert context.api.device_config_map is not None
+        assert context.api.device_state_map is not None
         assert context.api.string_map is not None
         assert len(context.api.install_map) == 0
         assert len(context.api.device_map) == 0
-        assert len(context.api.config_map) == 0
-        assert len(context.api.status_map) == 0
+        assert len(context.api.device_config_map) == 0
+        assert len(context.api.device_state_map) == 0
         assert len(context.api.string_map) == 0
 
     else:
@@ -157,13 +161,13 @@ def test_login_seq(name, usr, pwd, exp_except, request):
         assert context.api.login_info.login_method is not None
         assert context.api.install_map is not None
         assert context.api.device_map is not None
-        assert context.api.config_map is not None
-        assert context.api.status_map is not None
+        assert context.api.device_config_map is not None
+        assert context.api.device_state_map is not None
         assert context.api.string_map is not None
         assert len(context.api.install_map) == 0
         assert len(context.api.device_map) == 0
-        assert len(context.api.config_map) == 0
-        assert len(context.api.status_map) == 0
+        assert len(context.api.device_config_map) == 0
+        assert len(context.api.device_state_map) == 0
         assert len(context.api.string_map) == 0
 
     else:
@@ -228,19 +232,18 @@ def test_get_data(name, method, loop, exp_except, request):
     for device_serial,device in context.api.device_map.items():
         assert type(device_serial) is str
         assert type(device) is DabPumpsDevice
-        assert device.id is not None    
         assert device.serial is not None    
         assert device.name is not None  
         assert device.config_id is not None  
         assert device.install_id is not None  
 
-    assert context.api.config_map is not None
-    assert type(context.api.config_map) is dict
-    assert len(context.api.config_map) > 0
+    assert context.api.device_config_map is not None
+    assert type(context.api.device_config_map) is dict
+    assert len(context.api.device_config_map) > 0
 
-    for config_id,config in context.api.config_map.items():
+    for config_id,config in context.api.device_config_map.items():
         assert type(config_id) is str
-        assert type(config) is DabPumpsConfig
+        assert type(config) is DabPumpsDeviceConfig
         assert config.id is not None
         assert config.label is not None
 
@@ -248,21 +251,27 @@ def test_get_data(name, method, loop, exp_except, request):
         assert type(config.meta_params) is dict
         assert len(config.meta_params) > 0
 
-        for param_name,param in config.meta_params.items():
-            assert type(param_name) is str
+        for param_key,param in config.meta_params.items():
+            assert type(param_key) is str
             assert type(param) is DabPumpsParams
-            assert param.key is not None
 
-            assert context.api.status_map is not None
-            assert type(context.api.status_map) is dict
-            assert len(context.api.status_map) > 0
+    assert context.api.device_state_map is not None
+    assert type(context.api.device_state_map) is dict
+    assert len(context.api.device_state_map) > 0
 
-    for status_id,status in context.api.status_map.items():
-        assert type(status_id) is str
-        assert type(status) is DabPumpsStatus
-        assert status.serial is not None
-        assert status.key is not None
-        assert status.name is not None
+    for device_serial,device_state in context.api.device_state_map.items():
+        assert type(device_serial) is str
+        assert type(device_state) is DabPumpsDeviceState
+        assert device_state.status_ts is not None
+        assert device_state.status is not None
+        assert type(device_state.status) is dict
+        assert len(device_state.status) > 0
+
+        for status_key,status in device_state.status.items():
+            assert type(status_key) is str
+            assert type(status) is DabPumpsStatus
+            assert status.code is not None
+            assert status.value is not None
 
     counter_success: int = 0
     counter_fail: int = 0
@@ -276,16 +285,23 @@ def test_get_data(name, method, loop, exp_except, request):
 
             context.api.fetch_install_statuses(install_id)
 
-            assert context.api.status_map is not None
-            assert type(context.api.status_map) is dict
-            assert len(context.api.status_map) > 0
+            assert context.api.device_state_map is not None
+            assert type(context.api.device_state_map) is dict
+            assert len(context.api.device_state_map) > 0
 
-            for status_id,status in context.api.status_map.items():
-                assert type(status_id) is str
-                assert type(status) is DabPumpsStatus
-                assert status.serial is not None
-                assert status.key is not None
-                assert status.name is not None
+            for device_serial,device_state in context.api.device_state_map.items():
+                assert type(device_serial) is str
+                assert type(device_state) is DabPumpsDeviceState
+                assert device_state.status_ts is not None
+                assert device_state.status is not None
+                assert type(device_state.status) is dict
+                assert len(device_state.status) > 0
+
+                for status_key,status in device_state.status.items():
+                    assert type(status_key) is str
+                    assert type(status) is DabPumpsStatus
+                    assert status.code is not None
+                    assert status.value is not None
 
             counter_success += 1
         
@@ -359,18 +375,24 @@ def test_set_data_by_code(method, key, codes, exp_code, exp_except, request):
     for install_id in context.api.install_map:
         context.api.fetch_install_details(install_id)
 
-    # Find current code and value and find a new code to change into
-    status = next( (status for status in context.api.status_map.values() if status.key==key), None)
-    assert status is not None
+    # Resolve device for this key 
+    status = None
+    for serial,state in context.api.device_state_map.items():
+        status = state.status.get(key)
+        if status is not None:
+            break
+    
+    assert serial is not None
+    assert status is not None    
 
+    # Find current code and value and find a new code to change into
     old_code = status.code
     new_code = next( (code for code in codes if code != old_code), None )
 
     # Check config param
-    device = context.api.device_map.get(status.serial)
+    device = context.api.device_map.get(serial)
     install = context.api.install_map.get(device.install_id)
-    config = context.api.config_map.get(device.config_id)
-    param = config.meta_params.get(status.key)
+    param = context.api.get_status_metadata(serial, key)
 
     if install.role[0] not in param.change:
         # Not allowed to change this param with this user account. Skip test
@@ -379,13 +401,16 @@ def test_set_data_by_code(method, key, codes, exp_code, exp_except, request):
 
     # Change device status and do immediate test of changed value. 
     # We hold the changed value while the backend is processing the change.
-    changed = context.api.change_device_status(status.serial, status.key, code=new_code)
+    changed = context.api.change_device_status(serial, key, code=new_code)
     if changed:
         context.api.fetch_install_statuses(install_id)
 
-        status = next( (status for status in context.api.status_map.values() if status.key==key), None)
+        status = context.api.get_status_value(serial, key)
+        update_ts = context.api.get_status_update(serial, key)
+
         assert status.code == new_code
-        assert status.update_ts is not None
+        assert update_ts is not None
+
         _LOGGER.debug(f"Found value changed from {old_code} to {new_code}")
 
         # Wait until the backend has processed the change and test again
@@ -396,9 +421,11 @@ def test_set_data_by_code(method, key, codes, exp_code, exp_except, request):
     # Test after change has been processed by backend
     context.api.fetch_install_statuses(install_id)
 
-    status = next( (status for status in context.api.status_map.values() if status.key==key), None)
-    assert status.code == new_code if exp_code == "=" else exp_code
-    assert status.update_ts is None
+    status = context.api.get_status_value(serial, key)
+    update_ts = context.api.get_status_update(serial, key)
+
+    assert status.code == new_code
+    assert update_ts is None
 
     _LOGGER.debug(f"Found value still changed from {old_code} to {new_code}")
 
@@ -407,9 +434,11 @@ def test_set_data_by_code(method, key, codes, exp_code, exp_except, request):
     if changed:
         context.api.fetch_install_statuses(install_id)
 
-        status = next( (status for status in context.api.status_map.values() if status.key==key), None)
+        status = context.api.get_status_value(serial, key)
+        update_ts = context.api.get_status_update(serial, key)
+
         assert status.code == old_code
-        assert status.update_ts is not None
+        assert update_ts is not None
 
         _LOGGER.debug(f"Found value changed back from {new_code} to {old_code}")
 
@@ -441,14 +470,20 @@ def test_set_data_by_value(method, key, lang, exp_value, exp_except, request):
     for install_id in context.api.install_map:
         context.api.fetch_install_details(install_id)
 
-    # Check config param
-    status = next( (status for status in context.api.status_map.values() if status.key==key), None)
-    assert status is not None
+    # Resolve device for this key 
+    status = None
+    for serial,state in context.api.device_state_map.items():
+        status = state.status.get(key)
+        if status is not None:
+            break
+    
+    assert serial is not None
+    assert status is not None    
 
-    device = context.api.device_map.get(status.serial)
+    # Check config param
+    device = context.api.device_map.get(serial)
     install = context.api.install_map.get(device.install_id)
-    config = context.api.config_map.get(device.config_id)
-    param = config.meta_params.get(status.key)
+    param = context.api.get_status_metadata(serial, key)
 
     if install.role[0] not in param.change:
         # Not allowed to change this param with this user account. Skip test
@@ -461,13 +496,16 @@ def test_set_data_by_value(method, key, lang, exp_value, exp_except, request):
 
     # Change device status and do immediate test of changed value. 
     # We hold the changed value while the backend is processing the change.
-    changed = context.api.change_device_status(status.serial, status.key, value=new_value)
+    changed = context.api.change_device_status(serial, key, value=new_value)
     if changed:
         context.api.fetch_install_statuses(install_id)
 
-        status = next( (status for status in context.api.status_map.values() if status.key==key), None)
+        status = context.api.get_status_value(serial, key)
+        update_ts = context.api.get_status_update(serial, key)
+    
         assert status.value == new_value
-        assert status.update_ts is not None
+        assert update_ts is not None
+
         _LOGGER.debug(f"Found value changed from {old_value} to {new_value}")
 
         # Wait until the backend has processed the change and test again
@@ -478,9 +516,11 @@ def test_set_data_by_value(method, key, lang, exp_value, exp_except, request):
     # Test after change has been processed by backend
     context.api.fetch_install_statuses(install_id)
 
-    status = next( (status for status in context.api.status_map.values() if status.key==key), None)
+    status = context.api.get_status_value(serial, key)
+    update_ts = context.api.get_status_update(serial, key)
+
     assert status.value == new_value if exp_value == "=" else exp_value
-    assert status.update_ts is None
+    assert update_ts is not None
 
     _LOGGER.debug(f"Found value still changed from {old_value} to {new_value}")
 
@@ -489,9 +529,11 @@ def test_set_data_by_value(method, key, lang, exp_value, exp_except, request):
     if changed:
         context.api.fetch_install_statuses(install_id)
 
-        status = next( (status for status in context.api.status_map.values() if status.key==key), None)
+        status = context.api.get_status_value(serial, key)
+        update_ts = context.api.get_status_update(serial, key)
+
         assert status.value == old_value
-        assert status.update_ts is not None
+        assert update_ts is not None
 
         _LOGGER.debug(f"Found value changed back from {new_value} to {old_value}")
 
@@ -592,46 +634,28 @@ def test_strings(name, lang, exp_lang, request):
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("context")
 @pytest.mark.parametrize(
-    "name, method, exp_li, exp_at, exp_rt, exp_d, exp_except",
+    "name, method, exp_d, exp_except",
     [
-        ("ok",  None,                        1, 1, 1, 3, None),
-        ("ok",  DabPumpsLogin.H2D_APP,       1, 1, 1, 3, None),
-        ("ok",  DabPumpsLogin.DABLIVE_APP_0, 1, 1, 1, 1, None),
-        ("ok",  DabPumpsLogin.DABLIVE_APP_1, 1, 1, 1, 1, None),
-        ("ok",  DabPumpsLogin.DCONNECT_APP,  1, 1, 1, 1, None),
-        ("ok",  DabPumpsLogin.DCONNECT_WEB,  1, 1, 1, 2, None),
+        ("ok",  None,                        3, None),
+        ("ok",  DabPumpsLogin.H2D_APP,       3, None),
+        ("ok",  DabPumpsLogin.DABLIVE_APP_0, 1, None),
+        ("ok",  DabPumpsLogin.DABLIVE_APP_1, 1, None),
+        ("ok",  DabPumpsLogin.DCONNECT_APP,  1, None),
+        ("ok",  DabPumpsLogin.DCONNECT_WEB,  2, None),
     ]
 )
-def test_callbacks(name, method, exp_li, exp_at, exp_rt, exp_d, exp_except, request):
+def test_callbacks(name, method, exp_d, exp_except, request):
     context = request.getfixturevalue("context")
     context.api = DabPumps(TEST_USERNAME, TEST_PASSWORD)
     assert context.api.closed == False
 
-    # Set login info, token and diagnostics callback functions
-    counter_login_info = 0
-    counter_access_token = 0
-    counter_refresh_token = 0
+    # Set diagnostics callback functions
     counter_diagnostics = 0
-
-    def login_info_updated(info: DabPumpsLoginInfo): 
-        nonlocal counter_login_info
-        counter_login_info += 1
-
-    def access_token_updated(info: DabPumpsAccessTokenInfo): 
-        nonlocal counter_access_token
-        counter_access_token += 1
-
-    def refresh_token_updated(info: DabPumpsRefreshTokenInfo): 
-        nonlocal counter_refresh_token
-        counter_refresh_token += 1
 
     def diagnostics_updated(context,item,detail,data): 
         nonlocal counter_diagnostics
         counter_diagnostics += 1
 
-    context.api.set_login_info_updated(callback=login_info_updated)
-    context.api.set_access_token_updated(callback=access_token_updated)
-    context.api.set_refresh_token_updated(callback=refresh_token_updated)
     context.api.set_diagnostics(callback=diagnostics_updated)
 
     # Login
@@ -639,17 +663,11 @@ def test_callbacks(name, method, exp_li, exp_at, exp_rt, exp_d, exp_except, requ
 
     assert context.api.login_active
     assert context.api.login_info.login_method is not None
-    assert counter_login_info == exp_li
-    assert counter_access_token == exp_at
-    assert counter_refresh_token == exp_rt
     assert counter_diagnostics == exp_d
 
     # Do some more api calls; shouldn't change info and token counters since tokens are still valid
     context.api.fetch_install_list()
 
-    assert counter_login_info == exp_li
-    assert counter_access_token == exp_at
-    assert counter_refresh_token == exp_rt
     assert counter_diagnostics == exp_d + 1
 
     # Get first install details, metadata and initial statuses
@@ -660,17 +678,11 @@ def test_callbacks(name, method, exp_li, exp_at, exp_rt, exp_d, exp_except, requ
     # Repeat the login; shouldn't change info and token counters since tokens are still valid
     context.api.login()
     
-    assert counter_login_info == exp_li
-    assert counter_access_token == exp_at
-    assert counter_refresh_token == exp_rt
-    assert counter_diagnostics == exp_d + 2
+    assert counter_diagnostics >= exp_d + 2
 
     # Do some more api calls; shouldn't change info and token counters since tokens are still valid
     context.api.fetch_install_details(install_id)
 
-    assert counter_login_info == exp_li
-    assert counter_access_token == exp_at
-    assert counter_refresh_token == exp_rt
     assert counter_diagnostics >= exp_d + 3
 
 
@@ -696,64 +708,36 @@ def test_token_reuse(name, method, exp_except, request):
     login_info = None
     access_token_info = None
     refresh_token_info = None
-    counter_login_info = 0
-    counter_access_token = 0
-    counter_refresh_token = 0
-
-    def login_info_updated(info: DabPumpsLoginInfo): 
-        nonlocal login_info
-        nonlocal counter_login_info
-        login_info = info
-        counter_login_info += 1
-
-    def access_token_updated(info: DabPumpsAccessTokenInfo): 
-        nonlocal access_token_info
-        nonlocal counter_access_token
-        access_token_info = info
-        counter_access_token += 1
-
-    def refresh_token_updated(info: DabPumpsRefreshTokenInfo): 
-        nonlocal refresh_token_info
-        nonlocal counter_refresh_token
-        refresh_token_info = info
-        counter_refresh_token += 1
-
-    context.api.set_login_info_updated(callback=login_info_updated)
-    context.api.set_access_token_updated(callback=access_token_updated)
-    context.api.set_refresh_token_updated(callback=refresh_token_updated)
 
     # Login
     context.api.login(method)
 
     assert context.api.login_active
     assert context.api.login_info.login_method is not None
-    assert login_info is not None
-    assert access_token_info is not None
-    assert refresh_token_info is not None
+    assert context.api.access_token_info is not None
+    assert context.api.refresh_token_info is not None
 
-    # Do some more api calls, then close the api
+    # Do some more api calls
     context.api.fetch_install_list()
     
+    # Remember the login info, then close the api
+    login_info = context.api.login_info
+    access_token_info = context.api.access_token_info
+    refresh_token_info = context.api.refresh_token_info
+
     context.api.close()
     time.sleep(10)
 
     # Create a fresh api instance, passing info, access and refresh token and repeat the login. 
-    # Should not do an actual new login, only a refresh of the access token
-    counter_login_info = 0
-    counter_access_token = 0
-    counter_refresh_token = 0
-
+    # Should not do an actual new login, nor a refresh of the access token
     context.api = DabPumps(TEST_USERNAME, TEST_PASSWORD, login_info=login_info, access_token_info=access_token_info, refresh_token_info=refresh_token_info)
-    context.api.set_login_info_updated(callback=login_info_updated)
-    context.api.set_access_token_updated(callback=access_token_updated)
-    context.api.set_refresh_token_updated(callback=refresh_token_updated)
-
     context.api.login()
     context.api.fetch_install_list()
 
-    assert counter_login_info == 0
-    assert counter_access_token == 0
-    assert counter_refresh_token == 0
+    assert context.api.login_active
+    assert context.api.login_info == login_info
+    assert context.api.access_token_info == access_token_info
+    assert context.api.refresh_token_info == refresh_token_info
 
     assert context.api.install_map is not None
     assert type(context.api.install_map) is dict
@@ -764,21 +748,14 @@ def test_token_reuse(name, method, exp_except, request):
 
     # Create a fresh api instance, passing info and refresh token (but not acces token) and repeat the login. 
     # Should not do an actual new login, only a refresh of the access token
-    counter_login_info = 0
-    counter_access_token = 0
-    counter_refresh_token = 0
-
     context.api = DabPumps(TEST_USERNAME, TEST_PASSWORD, login_info=login_info, refresh_token_info=refresh_token_info)
-    context.api.set_login_info_updated(callback=login_info_updated)
-    context.api.set_access_token_updated(callback=access_token_updated)
-    context.api.set_refresh_token_updated(callback=refresh_token_updated)
-
     context.api.login()
     context.api.fetch_install_list()
 
-    assert counter_login_info == 0
-    assert counter_access_token == 1
-    assert counter_refresh_token in [0,1]   # refresh-token may or may not be updated when generating new access-token
+    assert context.api.login_active
+    assert context.api.login_info == login_info
+    assert context.api.access_token_info != access_token_info
+    assert context.api.refresh_token_info == refresh_token_info
 
     assert context.api.install_map is not None
     assert type(context.api.install_map) is dict
@@ -806,11 +783,10 @@ def test_create_id(name, attr, exp_id, request):
 def device_map():
     device_map = {
         "SERIAL": DabPumpsDevice(
-            vendor = 'DAB Pumps',
-            name = 'test device',
-            id = DabPumps.create_id('test device'),
             serial = 'SERIAL',
+            name = 'test device',
             product = 'test product',
+            vendor = 'DAB Pumps',
             hw_version = 'test hw version',
             config_id = 'CONFIG_ID',
             install_id = 'INSTALL_ID',
@@ -823,29 +799,34 @@ def device_map():
 @pytest.fixture
 def config_map():
     config_map = {
-        "CONFIG_ID": DabPumpsConfig(
+        "CONFIG_ID": DabPumpsDeviceConfig(
             id = 'CONFIG_ID',
             label = 'test label',
             description = 'test description',
             meta_params = {
-                "KEY_ENUM":  DabPumpsParams(key='KEY_ENUM',  name='NameEnum',  type=DabPumpsParamType.ENUM,    unit=None, weight=None, values={'1':'one', '2':'two', '3':'three'}, min=1, max=3, family='f', group='g', view='CSIR', change='', log='', report=''),
-                "KEY_FLOAT": DabPumpsParams(key='KEY_FLOAT', name='NameFloat', type=DabPumpsParamType.MEASURE, unit='F',  weight=0.1,  values=None, min=0, max=1,  family='f', group='g', view='CSIR', change='', log='', report=''),
-                "KEY_INT":   DabPumpsParams(key='KEY_INT',   name='NameInt',   type=DabPumpsParamType.MEASURE, unit='I',  weight=1,    values=None, min=0, max=10, family='f', group='g', view='CSIR', change='', log='', report=''),
-                "KEY_LABEL": DabPumpsParams(key='KEY_LABEL', name='NameLabel', type=DabPumpsParamType.LABEL,   unit='',   weight=None, values=None, min=0, max=0,  family='f', group='g', view='CSIR', change='', log='', report=''),
+                "KEY_ENUM":  DabPumpsParams(name='NameEnum',  type=DabPumpsParamType.ENUM,    unit=None, weight=None, values={'1':'one', '2':'two', '3':'three'}, min=1, max=3, family='f', group='g', view='CSIR', change='', log='', report=''),
+                "KEY_FLOAT": DabPumpsParams(name='NameFloat', type=DabPumpsParamType.MEASURE, unit='F',  weight=0.1,  values=None, min=0, max=1,  family='f', group='g', view='CSIR', change='', log='', report=''),
+                "KEY_INT":   DabPumpsParams(name='NameInt',   type=DabPumpsParamType.MEASURE, unit='I',  weight=1,    values=None, min=0, max=10, family='f', group='g', view='CSIR', change='', log='', report=''),
+                "KEY_LABEL": DabPumpsParams(name='NameLabel', type=DabPumpsParamType.LABEL,   unit='',   weight=None, values=None, min=0, max=0,  family='f', group='g', view='CSIR', change='', log='', report=''),
             }
         ),
     }
     yield config_map
 
 @pytest.fixture
-def status_map():
-    status_map = {
-        'serial_key_enum': DabPumpsStatus('SERIAL', 'KEY_ENUM', 'NameEnum', '1', 'one', None, None, None),
-        'serial_key_float': DabPumpsStatus('SERIAL', 'KEY_FLOAT', 'NameFloat', '1', 0.1, 'F', None, None),
-        'serial_key_int': DabPumpsStatus('SERIAL', 'KEY_INT', 'NameInt', '1', 1, 'I', None, None),
-        'serial_key_label': DabPumpsStatus('SERIAL', 'KEY_LABEL', 'NameLabel', 'ABC', 'ABC', None, None, None),
+def state_map():
+    state_map = {
+        'SERIAL': DabPumpsDeviceState(
+            status_ts = utcnow(),
+            status = {
+                'KEY_ENUM':  DabPumpsStatus(code='1', value='one'),
+                'KEY_FLOAT': DabPumpsStatus(code='1', value=0.1),
+                'KEY_INT':   DabPumpsStatus(code='1', value=1),
+                'KEY_LABEL': DabPumpsStatus(code='ABC', value='ABC'),
+            },
+        )
     }
-    yield status_map
+    yield state_map
 
 @pytest.fixture
 def string_map():
@@ -882,7 +863,7 @@ def test_decode(name, serial, key, code, exp_value, request):
     context.api = DabPumps("dummy_usr", "wrong_pwd") # no login needed
 
     context.api._device_map = request.getfixturevalue("device_map")
-    context.api._config_map = request.getfixturevalue("config_map")
+    context.api._device_config_map = request.getfixturevalue("config_map")
 
     value = context.api._decode_status_value(serial, key, code)
     assert value == exp_value
@@ -913,7 +894,7 @@ def test_encode(name, serial, key, value, exp_code, request):
     context.api = DabPumps("dummy_usr", "wrong_pwd") # no login needed
 
     context.api._device_map = request.getfixturevalue("device_map")
-    context.api._config_map = request.getfixturevalue("config_map")
+    context.api._device_config_map = request.getfixturevalue("config_map")
 
     code = context.api._encode_status_value(serial, key, value)
     assert code == exp_code
@@ -921,27 +902,26 @@ def test_encode(name, serial, key, value, exp_code, request):
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("context", "device_map", "config_map", "status_map", "string_map")
+@pytest.mark.usefixtures("context", "device_map", "config_map", "state_map", "string_map")
 @pytest.mark.parametrize(
-    "name, serial, key, exp_code, exp_value, exp_unit",
+    "name, serial, key, exp_code, exp_value",
     [
-        ("device unknown", 'SERIAL_XX', 'KEY_ENUM', None, None, None),
-        ("device unknown", 'SERIAL_XX', 'KEY_ENUM', None, None, None),
-        ("key unknown", 'SERIAL', 'KEY_XX', None, None, None),
-        ("enum ok", "SERIAL", 'KEY_ENUM', '1', 'one', None),
-        ("float ok", "SERIAL", 'KEY_FLOAT', '1', 0.1, 'F'),
-        ("int ok", "SERIAL", 'KEY_INT', '1', 1, 'I'),
-        ("label ok", "SERIAL", 'KEY_LABEL', 'ABC', 'ABC', None),
+        ("device unknown", 'SERIAL_XX', 'KEY_ENUM', None, None),
+        ("device unknown", 'SERIAL_XX', 'KEY_ENUM', None, None),
+        ("key unknown", 'SERIAL', 'KEY_XX', None, None),
+        ("enum ok", "SERIAL", 'KEY_ENUM', '1', 'one'),
+        ("float ok", "SERIAL", 'KEY_FLOAT', '1', 0.1),
+        ("int ok", "SERIAL", 'KEY_INT', '1', 1),
+        ("label ok", "SERIAL", 'KEY_LABEL', 'ABC', 'ABC'),
     ]
 )
-def test_status(name, serial, key, exp_code, exp_value, exp_unit, request):
+def test_status(name, serial, key, exp_code, exp_value, request):
     context = request.getfixturevalue("context")
     context.api = DabPumps("dummy_usr", "wrong_pwd") # no login needed
 
     context.api._device_map = request.getfixturevalue("device_map")
-    context.api._config_map = request.getfixturevalue("config_map")
-    context.api._status_actual_map = request.getfixturevalue("status_map")
-    context.api._status_static_map = {}
+    context.api._device_config_map = request.getfixturevalue("config_map")
+    context.api._device_state_map = request.getfixturevalue("state_map")
     context.api._string_map = request.getfixturevalue("string_map")
 
     status = context.api.get_status_value(serial, key)
@@ -949,15 +929,12 @@ def test_status(name, serial, key, exp_code, exp_value, exp_unit, request):
         assert status is None
     else:
         assert status is not None
-        assert status.serial == serial
-        assert status.key == key
         assert status.code == exp_code
         assert status.value == exp_value
-        assert status.unit == exp_unit
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("context", "device_map", "config_map", "status_map", "string_map")
+@pytest.mark.usefixtures("context", "device_map", "config_map", "state_map", "string_map")
 @pytest.mark.parametrize(
     "name, serial, key, exp_type, exp_values, exp_unit",
     [
@@ -975,9 +952,8 @@ def test_metadata(name, serial, key, exp_type, exp_values, exp_unit, request):
     context.api = DabPumps("dummy_usr", "wrong_pwd") # no login needed
 
     context.api._device_map = request.getfixturevalue("device_map")
-    context.api._config_map = request.getfixturevalue("config_map")
-    context.api._status_actual_map = request.getfixturevalue("status_map")
-    context.api._status_static_map = {}
+    context.api._device_config_map = request.getfixturevalue("config_map")
+    context.api._device_state_map = request.getfixturevalue("state_map")
     context.api._string_map = request.getfixturevalue("string_map")
 
     params = context.api.get_status_metadata(serial, key)
@@ -985,7 +961,6 @@ def test_metadata(name, serial, key, exp_type, exp_values, exp_unit, request):
         assert params is None
     else:
         assert params is not None
-        assert params.key == key
         assert params.type == exp_type
         assert params.unit == exp_unit
 

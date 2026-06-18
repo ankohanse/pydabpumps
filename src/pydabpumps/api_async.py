@@ -53,11 +53,13 @@ from .data import (
     DabPumpsConnectError,
     DabPumpsAuthError,
     DabPumpsDataError,
+    DabPumpsStatusCode,
     DabPumpsUserRole,
     DabPumpsParamType,
     DabPumpsInstall,
     DabPumpsDevice,
-    DabPumpsConfig,
+    DabPumpsDeviceConfig,
+    DabPumpsDeviceState,
     DabPumpsParams,
     DabPumpsStatus,
     DabPumpsLogin,
@@ -88,21 +90,15 @@ class AsyncDabPumps:
         self._refresh_token_info: DabPumpsRefreshTokenInfo = refresh_token_info or DabPumpsRefreshTokenInfo()
 
         # Retrieved data
-        self._install_map: dict[str, DabPumpsInstall] = {}
-        self._device_map: dict[str, DabPumpsDevice] = {}
-        self._config_map: dict[str, DabPumpsConfig] = {}
-        self._status_actual_map: dict[str, DabPumpsStatus] = {}
-        self._status_static_map: dict[str, DabPumpsStatus] = {}
-        self._string_map: dict[str, str] = {}
+        self._install_map: dict[str, DabPumpsInstall] = {}              # install_id => install
+        self._device_map: dict[str, DabPumpsDevice] = {}                # serial => device def
+        self._device_config_map: dict[str, DabPumpsDeviceConfig] = {}   # config_id => device config
+        self._device_state_map: dict[str, DabPumpsDeviceState] = {}     # serial => device state
+        self._string_map: dict[str, str] = {}                           # key => translation
         self._string_map_lang: str = None
 
-        self._install_map_ts: datetime = datetime.min
-        self._device_map_ts: datetime = datetime.min
-        self._device_detail_ts: datetime = datetime.min
-        self._config_map_ts: datetime = datetime.min
-        self._status_actual_map_ts: datetime = datetime.min
-        self._status_static_map_ts: datetime = datetime.min
-        self._string_map_ts: datetime = datetime.min
+        # Internal admin of which status values have a pending update
+        self._status_update_map: dict[str, datetime] = {}               # id(serial+key) -> datetime
 
         # Http Client; we keep the same client for the whole life of the api instance.
         self._http_client: httpx.AsyncClient = client or httpx.AsyncClient()
@@ -111,26 +107,8 @@ class AsyncDabPumps:
         # Locks to protect certain operations from being called from multiple threads
         self._login_lock = asyncio.Lock()
 
-        # To notify our parent when login info and tokens are updated
-        self._login_info_updated_callback = None
-        self._access_token_updated_callback = None
-        self._refresh_token_updated_callback = None
-
         # To pass diagnostics data back to our parent
         self._diagnostics_callback = None
-
-
-    def set_login_info_updated(self, callback):
-        """Pass updated login ingo back to our parent"""
-        self._login_info_updated_callback = callback
-
-    def set_access_token_updated(self, callback):
-        """Pass an updated refresh token back to our parent"""
-        self._access_token_updated_callback = callback
-
-    def set_refresh_token_updated(self, callback):
-        """Pass an updated refresh token back to our parent"""
-        self._refresh_token_updated_callback = callback
 
 
     def set_diagnostics(self, callback):
@@ -170,12 +148,12 @@ class AsyncDabPumps:
         return self._device_map
     
     @property
-    def config_map(self) -> dict[str, DabPumpsConfig]:
-        return self._config_map
+    def device_config_map(self) -> dict[str, DabPumpsDeviceConfig]:
+        return self._device_config_map
     
     @property
-    def status_map(self) -> dict[str, DabPumpsStatus]:
-        return self._status_static_map | self._status_actual_map
+    def device_state_map(self) -> dict[str, DabPumpsDeviceState]:
+        return self._device_state_map
     
     @property
     def string_map(self) -> dict[str, str]:
@@ -185,30 +163,7 @@ class AsyncDabPumps:
     def string_map_lang(self) -> str:
         return self._string_map_lang
 
-    @property
-    def install_map_ts(self) -> datetime:
-        return self._install_map_ts
-    
-    @property
-    def device_map_ts(self) -> datetime:
-        return self._device_map_ts
-    
-    @property
-    def device_detail_ts(self) -> datetime:
-        return self._device_detail_ts
-    
-    @property
-    def config_map_ts(self) -> datetime:
-        return self._config_map_ts
-    
-    @property
-    def status_map_ts(self) -> datetime:
-        return max( [self._status_static_map_ts, self._status_actual_map_ts] )
-    
-    @property
-    def string_map_ts(self) -> datetime:
-        return self._string_map_ts
-    
+
     @property
     def closed(self) -> bool:
         """Returns whether the DabPumps api has been closed."""
@@ -285,17 +240,6 @@ class AsyncDabPumps:
                         success =  False
 
                 if success:
-                    # Pass changed info back to our parent so it can be used for a more
-                    # efficient next login instead of the username+password (after a restart)
-                    if self._login_info_updated_callback is not None and self._login_info != old_login_info:
-                        self._login_info_updated_callback(self.login_info)
-
-                    if self._access_token_updated_callback is not None and self._access_token_info != old_access_token_info:
-                        self._access_token_updated_callback(self.access_token_info)
-
-                    if self._refresh_token_updated_callback is not None and self._refresh_token_info != old_refresh_token_info:
-                        self._refresh_token_updated_callback(self.refresh_token_info)
-
                     # if we reached this point then a login method succeeded
                     self._login_active = True
                     return 
@@ -325,13 +269,13 @@ class AsyncDabPumps:
 
         # Dab Pumps seems to ignore the expiry field inside the token, using only
         # the expires_in field that was passed alongside the token.
-        if datetime.now() > self._access_token_info.expiry:
+        if utcnow() > self._access_token_info.expiry:
             _LOGGER.debug(f"Access-Token expired")
             return False    # silently continue to the next login method (token refresh)
 
         # Re-use this access token
         context = f"login access_token reuse"
-        await self._update_diagnostics(datetime.now(), context, None, None, self._access_token_info)
+        await self._update_diagnostics(utcnow(), context, None, None, self._access_token_info)
 
         _LOGGER.debug(f"Reuse the access-token")
         return True
@@ -746,7 +690,7 @@ class AsyncDabPumps:
         elif expires_in < 10*24*60*60: margin = 12*60*60  # expires_in up to 10 days leads to margin of 12 hours
         else:                          margin = 24*60*60  # expires_in over 10 days leads to margin of 1 day
 
-        return datetime.now() + timedelta(seconds=expires_in) - timedelta(seconds=margin)
+        return utcnow() + timedelta(seconds=expires_in) - timedelta(seconds=margin)
 
 
 
@@ -812,7 +756,6 @@ class AsyncDabPumps:
             raise DabPumpsDataError(f"No installations found in data")
 
         # Remember this data
-        self._install_map_ts = datetime.now()
         self._install_map = install_map
 
 
@@ -820,9 +763,9 @@ class AsyncDabPumps:
         """
         Fetch all details from an installation.
         This fills:
-          device_map    (details for each device)
-          config_map    (config metadata for each device)
-          status_map    (inital statuses for each device)
+          device_map           (details for each device)
+          device_config_map    (config metadata for each device)
+          device_state_map     (inital statuses for each device)
         """
 
         # Retrieve list of devices within this install
@@ -832,11 +775,9 @@ class AsyncDabPumps:
         for config_id in [ d.config_id for d in self._device_map.values() if d.install_id==install_id ]:
             await self._fetch_device_config(config_id, raw_install_data=raw)
 
-        # Next, generate static statuses from the device configs
-        # and retrieve inital device statuses
+        # Next retrieve inital device statuses
         for serial in [ d.serial for d in self._device_map.values() if d.install_id==install_id ]:
-            await self._fetch_static_statuses(serial)
-            await self._fetch_device_statuses(serial, raw_install_data=raw)
+            await self._fetch_device_state(serial, raw_install_data=raw)
 
             # Finally, derive extra device details
             await self._derive_device_details(serial)
@@ -846,7 +787,7 @@ class AsyncDabPumps:
         """
         Fetch the statuses for all devices in an installation
         This updates:
-          status_map    (current statuses for each device)
+          device_state_map     (inital statuses for each device)
         """
 
         match self._login_info.fetch_method:
@@ -863,7 +804,7 @@ class AsyncDabPumps:
                 raw = None
 
         for serial in [ d.serial for d in self._device_map.values() if d.install_id==install_id ]:
-            await self._fetch_device_statuses(serial, raw_install_data=raw)
+            await self._fetch_device_state(serial, raw_install_data=raw)
         
         
     async def _fetch_install_devices(self, install_id: str):
@@ -918,7 +859,6 @@ class AsyncDabPumps:
             device = DabPumpsDevice(
                 vendor = 'DAB Pumps',
                 name = dum_name,
-                id = self.create_id(dum_name),
                 serial = dum_serial,
                 product = dum_product,
                 hw_version = dum_version,
@@ -937,7 +877,6 @@ class AsyncDabPumps:
             raise DabPumpsDataError(f"No devices found for installation id {install_id}")
 
         # Remember/update the found map.
-        self._device_map_ts = datetime.now()
         self._device_map.update(device_map)
 
         # Cleanup devices from this installation that are no longer needed in _device_map
@@ -993,8 +932,6 @@ class AsyncDabPumps:
                 conf_id = None
 
         # Process the resulting raw data
-        config_map = {}
-
         conf_id = conf_id or conf.get('configuration_id') or ''
         conf_name = conf.get('name') or conf.get('ProductName') or f"config {conf_id}"
         conf_label = conf.get('label') or conf.get('family') or f"config {conf_id}"
@@ -1022,7 +959,6 @@ class AsyncDabPumps:
             param_values = { str(v[0]): self._translate_string(str(v[1])) for v in values if len(v) >= 2 }
             
             param = DabPumpsParams(
-                key = param_name,
                 name = self._translate_string(param_name),
                 type = param_type,
                 unit = param_unit,
@@ -1039,78 +975,23 @@ class AsyncDabPumps:
             )
             conf_params[param_name] = param
         
-        config = DabPumpsConfig(
+        config = DabPumpsDeviceConfig(
             id = conf_id,
             label = conf_label,
             description = conf_descr,
             meta_params = conf_params
         )
-        config_map[conf_id] = config
         
-        if len(config_map) == 0:
+        if len(conf_params) == 0:
             raise DabPumpsDataError(f"No config found for '{config_id}'")
         
         _LOGGER.debug(f"Configuration found: {conf_name} with {len(conf_params)} metadata params")        
 
         # Merge with configurations from other devices
-        self._config_map_ts = datetime.now()
-        self._config_map.update(config_map)
+        self._device_config_map[conf_id] = config
         
 
-    async def _fetch_static_statuses(self, serial: str):
-        """Fetch the static statuses for a DAB Pumps device"""
-
-        # Process the existing data
-        status_map = {}
-
-        device = self._device_map.get(serial)
-        if not device:
-            return
-
-        config = self._config_map.get(device.config_id)
-        if not config or not config.meta_params:
-            return
-
-        for params in config.meta_params.values():
-            is_static = False
-            code = None
-            value = ""
-
-            # Detect known params that are normally hidden until an action occurs
-            if params.key in DEVICE_STATUS_STATIC:
-                is_static = True
-                code = None
-                value = None
-
-            # Detect 'button' params (type 'enum' with only one possible value)
-            if params.type == DabPumpsParamType.ENUM and len(params.values or []) == 1:
-                is_static = True
-                code = str(params.min) if params.min is not None else "0"
-                (value, _) = self._decode_status_value(serial, params.key, code)
-
-            # Add other static params types here in future
-            pass
-
-            if is_static:
-                status_key = AsyncDabPumps.create_id(device.serial, params.key)
-                status_new = DabPumpsStatus(
-                    serial = device.serial,
-                    key = params.key,
-                    name = self._translate_string(params.key),
-                    code = code,
-                    value = value,
-                    unit = params.unit,
-                    status_ts = utcnow(),
-                    update_ts = None,
-                )
-                status_map[status_key] = status_new 
-
-        # Merge with statuses from other devices
-        self._status_static_map_ts = datetime.now()
-        self._status_static_map.update(status_map)
-        
-        
-    async def _fetch_device_statuses(self, serial: str, raw_install_data: dict|None = None):
+    async def _fetch_device_state(self, serial: str, raw_install_data: dict|None = None):
         """Fetch the statuses for a DAB Pumps device"""
 
         statusts = ""
@@ -1157,101 +1038,78 @@ class AsyncDabPumps:
                 values = json.loads(status)
 
         # Process the resulting raw data
-        status_map = {}
         dt1 = datetime.fromisoformat(statusts) if statusts else utcnow()
         dt2 = datetime.fromisoformat(lastrecv) if lastrecv else utcnow()
         status_ts = max(dt1, dt2)
+        status = {}
 
         for item_key, item_code in values.items():
             try:
-                # the codes 'd' and 'h' are used when a property is disabled or hidden.
-                # Note the some properties (PowerShowerCountdown, SleepModeCountdown) can switch between 
-                # availabe (and be in _status_actual_map) and unavailable (still be in _status_static_map).
-                if item_code in ['d', 'h']:
-                    continue
-
                 # Check if this status was recently updated via change_device_status
                 # We keep the updated value for a hold period to prevent it from flipping back and forth 
                 # between its old value and new value because of delays in update on the DAB server side.
-                status_key = AsyncDabPumps.create_id(serial, item_key)
-                status_old = self._status_actual_map.get(status_key)
+                status_old = self.get_status_value(serial, item_key)
+                update_ts = self.get_status_update(serial, item_key)
 
-                if status_old and status_old.update_ts is not None and \
-                (utcnow() - status_old.update_ts).total_seconds() < STATUS_UPDATE_HOLD:
+                if status_old is not None and update_ts is not None and \
+                   (utcnow() - update_ts).total_seconds() < STATUS_UPDATE_HOLD:
 
-                    _LOGGER.info(f"Skip refresh of recently updated status ({status_key})")
-                    status_map[status_key] = status_old
+                    _LOGGER.info(f"Skip refresh of recently updated status ({serial}.{item_key})")
+                    status[item_key] = status_old
                     continue
 
                 # Resolve the coded value into the real world value
-                (item_val, item_unit) = self._decode_status_value(serial, item_key, item_code)
+                (item_val, _) = self._decode_status_value(serial, item_key, item_code)
 
                 # Add it to our statuses
                 status_new = DabPumpsStatus(
-                    serial = serial,
-                    key = item_key,
-                    name = self._translate_string(item_key),
                     code = item_code,
                     value = item_val,
-                    unit = item_unit,
-                    status_ts = status_ts,
-                    update_ts = None,
                 )
-                status_map[status_key] = status_new
+                status[item_key] = status_new
+
+                # Reset update flag
+                self.set_status_update(serial, item_key, None)
 
             except Exception as e:
                 _LOGGER.warning(f"Exception while processing status for '{serial}:{item_key}': {e}")
 
-        if len(status_map) == 0:
+        if len(status) == 0:
             raise DabPumpsDataError(f"No statuses found for '{serial}'")
         
-        _LOGGER.debug(f"Statuses found for '{serial}' with {len(status_map)} values")
+        _LOGGER.debug(f"Statuses found for '{serial}' with {len(status)} values")
 
         # Merge with statuses from other devices
-        self._status_actual_map_ts = datetime.now()
-        self._status_actual_map.update(status_map)
-
-        # Cleanup statuses from this device that are no longer needed in _status_actual_map
-        candidate_map = { k:v for k,v in self._status_actual_map.items() if v.serial == serial and not k in status_map }
-
-        for status_key, status_old in candidate_map.items():
-                
-            # Check if this status was recently updated via change_device_status
-            # We keep the updated value for a hold period to prevent it from flipping back and forth 
-            # between its old value and new value because of delays in update on the DAB server side.
-            if status_old.update_ts is not None and \
-               (utcnow() - status_old.update_ts).total_seconds() < STATUS_UPDATE_HOLD:
-
-                # Recently updated static status (i.e. button press)
-                continue
-                
-            # Status can be removed
-            self._status_actual_map.pop(status_key)
+        self._device_state_map[serial] = DabPumpsDeviceState(
+            status_ts = status_ts,
+            status = status,
+        )
         
         
     async def _derive_device_details(self, serial: str):
         """
         Derive extra details for a DAB Pumps device
 
-        This function should be run AFTER both _fetch_device_config and _fetch_device_statuses
+        This function should be run AFTER both _fetch_device_config and _fetch_device_state
         """
     
-        device = self._device_map[serial]
+        device = self._device_map.get(serial)
+        device_state = self._device_state_map.get(serial)
+
+        if device is None or device_state is None:
+            return
 
         # Search for specific statuses
         for attr,keys in DEVICE_ATTR_EXTRA.items():
             for key in keys:
-
-                # Try to find a status for this key and device
-                status = next( (status for status in self._status_actual_map.values() if status.serial==serial and status.key==key), None)
+                # Try to find a status for this key
+                status = device_state.status.get(key)
                 
                 if status is not None and status.value is not None:
                     # Found it. Update the device attribute (workaround via dict because it is a namedtuple)
                     if getattr(device, attr) != status.value:
-                        _LOGGER.debug(f"Found extra device attribute {serial} {attr} = {status.value}")
+                        _LOGGER.debug(f"Found extra device attribute {device.serial} {attr} = {status.value}")
                         setattr(device, attr, status.value)
-
-        self._device_detail_ts = datetime.now()
 
 
     async def change_device_status(self, serial: str, key: str, code: str|None=None, value: Any|None=None):
@@ -1268,9 +1126,8 @@ class AsyncDabPumps:
             _LOGGER.warning(f"To change device status either 'code' or 'value' needs to be specified")
             return False
         
-        status_key = AsyncDabPumps.create_id(serial, key)  
-
-        status = self._status_actual_map.get(status_key) or self._status_static_map.get(status_key)
+        state = self._device_state_map.get(serial)
+        status = state.status.get(key) if state is not None else None
         if not status:
             # Not found
             return False
@@ -1287,16 +1144,16 @@ class AsyncDabPumps:
         
         _LOGGER.info(f"Set {serial}:{key} from {status.value} to {value} ({code})")
         
-        # update the cached value in status_map
-        status_upd = replace(status, code = code, value = value, update_ts = utcnow())
-        self._status_actual_map[status_key] = status_upd
-        
+        # update the cached value in device_state_map.status
+        state.status[key] = DabPumpsStatus(code = code, value = value)
+        self.set_status_update(serial, key, utcnow())
+       
         # Update data via REST request
-        context = f"set {status_upd.serial}:{status_upd.key}"
+        context = f"set {serial}:{key}"
 
         match self._login_info.fetch_method:
-            case DabPumpsFetch.DABCS: url = DABCS_API_URL + f"/mobile/v1/dums/{status_upd.serial}/setparam?skipLogging=false"
-            case DabPumpsFetch.DCONNECT: url = DCONNECT_API_URL + f"/dum/{status_upd.serial}"
+            case DabPumpsFetch.DABCS: url = DABCS_API_URL + f"/mobile/v1/dums/{serial}/setparam?skipLogging=false"
+            case DabPumpsFetch.DCONNECT: url = DCONNECT_API_URL + f"/dum/{serial}"
         
         request = {
             "method": "POST",
@@ -1305,12 +1162,12 @@ class AsyncDabPumps:
                 'Content-Type': 'application/json',
             },
             "json": {
-                'key': status_upd.key, 
-                'value': status_upd.code
+                'key': key, 
+                'value': code,
             },
         }
         
-        _LOGGER.debug(f"Set device param for '{status.serial}:{status.key}' to '{value}' via {request["method"]} {request["url"]}")
+        _LOGGER.debug(f"Set device param for '{serial}:{key}' to '{value}' via {request["method"]} {request["url"]}")
         raw = await self._send_request(context, request)
         
         # If no exception was thrown then the operation was successfull
@@ -1420,7 +1277,6 @@ class AsyncDabPumps:
         _LOGGER.debug(f"Strings found: {len(string_map)} in language '{language}'")
         
         # Remember this data
-        self._string_map_ts = datetime.now() if len(string_map) > 0 else datetime.min
         self._string_map_lang = language
         self._string_map = string_map
 
@@ -1429,10 +1285,11 @@ class AsyncDabPumps:
         """
         Resolve code, value and unit for a status
         """
-        status_key = AsyncDabPumps.create_id(serial, key)
+        state = self._device_state_map.get(serial)
+        status = state.status.get(key) if state is not None else None
 
         # Return status for this key; decoding and translation of code into value is already done.
-        return self._status_actual_map.get(status_key) or self._status_static_map.get(status_key)
+        return status
 
 
     def get_status_metadata(self, serial: str, key: str) -> DabPumpsParams:
@@ -1442,10 +1299,31 @@ class AsyncDabPumps:
 
         # Find the meta params for this status
         device = self._device_map.get(serial) if self._device_map else None
-        config = self._config_map.get(device.config_id) if device is not None and self._config_map  else None
+        config = self._device_config_map.get(device.config_id) if device is not None and self._device_config_map  else None
         params = config.meta_params.get(key) if config is not None and config.meta_params else None
 
         return params
+
+
+    def get_status_update(self, serial: str, key: str) -> tuple[str,datetime]:
+        """
+        Resolve timestamp of last update of the status (if any changes were made)
+        """
+        update_id = AsyncDabPumps.create_id(serial, key)
+        update_ts = self._status_update_map.get(update_id)
+
+        return update_ts
+
+    def set_status_update(self, serial: str, key: str, ts: datetime):
+        """
+        Set/reset timestamp of last update of the status (if any changes were made)
+        """
+        update_id = AsyncDabPumps.create_id(serial, key)
+        if ts is not None:
+            self._status_update_map[update_id] = ts
+        else:
+            self._status_update_map.pop(update_id, None)
+
 
     def _decode_status_value(self, serial: str, key: str, code: str) -> Any:
         """
@@ -1454,14 +1332,11 @@ class AsyncDabPumps:
         """
 
         # Find the meta params for this status
-        device = self._device_map.get(serial) if self._device_map else None
-        config = self._config_map.get(device.config_id) if device is not None and self._config_map  else None
-        params = config.meta_params.get(key) if config is not None and config.meta_params else None
-
+        params = self.get_status_metadata(serial, key)
         if params is None:
             return (code, '')
         
-        if code is None:
+        if code is None or code in DabPumpsStatusCode:
             return (code, params.unit)
         
         # param:DabPumpsParams - 'key, type, unit, weight, values, min, max, family, group, view, change, log, report'
@@ -1499,9 +1374,7 @@ class AsyncDabPumps:
         """
 
         # Find the meta params for this status
-        device = self._device_map.get(serial) if self._device_map else None
-        config = self._config_map.get(device.config_id) if device is not None and self._config_map  else None
-        params = config.meta_params.get(key) if config is not None and config.meta_params else None
+        params = self.get_status_metadata(serial, key)
 
         if params is None or value is None:
             return str(value)
@@ -1542,7 +1415,7 @@ class AsyncDabPumps:
     async def _send_request(self, context, request):
         """GET or POST a request for JSON data"""
 
-        timestamp = datetime.now()
+        timestamp = utcnow()
         flags = request.get("flags") or {}
         flags_redirects = flags.get("redirects", True)
         flags_authorize = flags.get("authorize", True)
@@ -1581,7 +1454,7 @@ class AsyncDabPumps:
                 "success": rsp.is_success or rsp.is_redirect,
                 "status": f"{rsp.status_code} {rsp.reason_phrase}",
                 "headers": rsp.headers,
-                "elapsed": (datetime.now() - timestamp).total_seconds(),
+                "elapsed": (utcnow() - timestamp).total_seconds(),
             }
             if rsp.is_success and rsp.headers.get('content-type','').startswith('application/json'):
                 response["json"] = rsp.json()

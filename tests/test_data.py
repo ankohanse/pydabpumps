@@ -10,7 +10,8 @@ import pytest_asyncio
 from pydabpumps import (
     DabPumpsInstall,
     DabPumpsDevice,
-    DabPumpsConfig,
+    DabPumpsDeviceConfig,
+    DabPumpsDeviceState,
     DabPumpsParams,
     DabPumpsStatus,
     DabPumpsParamType,
@@ -24,12 +25,13 @@ async def test_dict():
 
     install_obj1 = DabPumpsInstall(id="tst_id", name="tst_name")
     install_obj2 = DabPumpsInstall(id="tst_id", name="tst_name", description="tst_descr", company="tst_company", address="tst_address", role=DabPumpsUserRole.INSTALLER, subscr_ts=datetime.now(tz=timezone.utc), devices=2)
-    device_obj = DabPumpsDevice(id="tst_id", serial="tst_serial", name="tst_name", vendor="tst_vendor", product="tst_product", hw_version="tst_version", sw_version="", mac_address="tst_mac", config_id="tst_config_id", install_id="tst_install_id")
-    param_obj = DabPumpsParams(key="tst_key", name="tst_name", type=DabPumpsParamType.MEASURE, unit="tst", weight=10, values={"1":"one","2":"two"}, min=None, max=None, family="tst_family", group="tst_group", view="ci", change="", log="", report="")
-    config_obj1 = DabPumpsConfig(id="tst_id", label="tst_label", description="tst_descr", meta_params={})
-    config_obj2 = DabPumpsConfig(id="tst_id", label="tst_label", description="tst_descr", meta_params={"param_key": param_obj})
-    status_obj1 = DabPumpsStatus(serial="tst_serial", key="tst_key", name="tst_name", code="1", value="one", unit="tst_unit", status_ts=None, update_ts=None )
-    status_obj2 = DabPumpsStatus(serial="tst_serial", key="tst_key", name="tst_name", code="1", value="one", unit="tst_unit", status_ts=datetime.now(timezone.utc), update_ts=datetime.now(timezone.utc) )
+    device_obj = DabPumpsDevice(serial="tst_serial", name="tst_name", vendor="tst_vendor", product="tst_product", hw_version="tst_version", sw_version="", mac_address="tst_mac", config_id="tst_config_id", install_id="tst_install_id")
+    param_obj = DabPumpsParams(name="tst_name", type=DabPumpsParamType.MEASURE, unit="tst", weight=10, values={"1":"one","2":"two"}, min=None, max=None, family="tst_family", group="tst_group", view="ci", change="", log="", report="")
+    config_obj1 = DabPumpsDeviceConfig(id="tst_id1", label="tst_label", description="tst_descr", meta_params={})
+    config_obj2 = DabPumpsDeviceConfig(id="tst_id2", label="tst_label", description="tst_descr", meta_params={"param_key": param_obj})
+    status_obj1 = DabPumpsStatus(code="1", value="one", update_ts=None )
+    status_obj2 = DabPumpsStatus(code="2", value="two", update_ts=datetime.now(timezone.utc) )
+    state_obj = DabPumpsDeviceState(status={"tst_key1": status_obj1, "tst_key2": status_obj2}, status_ts=datetime.now(timezone.utc) )
 
     # Convert obj into dict
     install_dict1 = asdict(install_obj1)
@@ -40,6 +42,7 @@ async def test_dict():
     config_dict2 = asdict(config_obj2)
     status_dict1 = asdict(status_obj1)
     status_dict2 = asdict(status_obj2)
+    state_dict = asdict(state_obj)
 
     assert install_dict1
     assert install_dict2
@@ -49,6 +52,7 @@ async def test_dict():
     assert config_dict2
     assert status_dict1
     assert status_dict2
+    assert state_dict
 
     # Serialize dict into string
     install_str1 = json.dumps(install_dict1, default=str)
@@ -59,6 +63,7 @@ async def test_dict():
     config_str2 = json.dumps(config_dict2, default=str)
     status_str1 = json.dumps(status_dict1, default=str)
     status_str2 = json.dumps(status_dict2, default=str)
+    state_str = json.dumps(state_dict, default=str)
 
     assert install_str1
     assert install_str2
@@ -68,6 +73,7 @@ async def test_dict():
     assert config_str2
     assert status_str1
     assert status_str2
+    assert state_str
 
     # Deserialize string back into dict
     install_dict1 = json.loads(install_str1)
@@ -78,6 +84,7 @@ async def test_dict():
     config_dict2 = json.loads(config_str2)
     status_dict1 = json.loads(status_str1)
     status_dict2 = json.loads(status_str2)
+    stat_dict = json.loads(state_str)
 
     assert isinstance(install_dict1, dict)
     assert isinstance(install_dict2, dict)
@@ -87,6 +94,7 @@ async def test_dict():
     assert isinstance(config_dict2, dict)
     assert isinstance(status_dict1, dict)
     assert isinstance(status_dict2, dict)
+    assert isinstance(state_dict, dict)
 
     # convert back into an object
     install_object1 = DabPumpsInstall(**install_dict1)
@@ -100,8 +108,8 @@ async def test_dict():
     param_object = DabPumpsParams(**param_dict)
     assert param_object == param_obj
 
-    config_object1 = DabPumpsConfig(**config_dict1)
-    config_object2 = DabPumpsConfig(**config_dict2)
+    config_object1 = DabPumpsDeviceConfig(**config_dict1)
+    config_object2 = DabPumpsDeviceConfig(**config_dict2)
     assert config_object1 == config_obj1
     assert config_object2 == config_obj2
 
@@ -109,3 +117,6 @@ async def test_dict():
     status_object2 = DabPumpsStatus(**status_dict2)
     assert status_object1 == status_obj1
     assert status_object2 == status_obj2
+
+    state_object = DabPumpsDeviceState(**state_dict)
+    assert state_object == state_obj

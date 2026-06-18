@@ -5,7 +5,11 @@ import time
 from dataclasses import asdict
 from datetime import datetime
 
-from pydabpumps import DabPumps
+from pydabpumps import (
+    DabPumps,
+    DabPumpsStatusCode,
+)
+
 
 # Setup logging to StdOut
 logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
@@ -69,7 +73,7 @@ def main():
             for k,v in asdict(device).items():
                 logger.info(f"    {k}: {v}")
 
-            config = api.config_map[device.config_id]                     
+            config = api.device_config_map[device.config_id]                     
             logger.info("")
             logger.info(f"config: {config.description} ({config.id})")
             logger.info(f"    meta_params: {len(config.meta_params)}")             
@@ -85,19 +89,24 @@ def main():
             api.fetch_install_statuses(install_id)
 
             for device in api.device_map.values():
-                device_statuses = { k:v for k,v in api.status_map.items() if v.serial==device.serial }
+                device_state = api.device_state_map[device.serial]
+
                 logger.info("")
-                logger.info(f"statuses for {device.name}: {len(device_statuses)}")
+                logger.info(f"statuses for {device.name}: {len(device_state.status)}")
 
-                for k,v in device_statuses.items():
-                    value_with_unit = f"{v.value} {v.unit}" if v.unit is not None else v.value
-
-                    if (v.value != v.code):
+                for key,status in device_state.status.items():
+                    if status.code in [DabPumpsStatusCode.HIDDEN]:
+                        continue
+                    
+                    params = api.get_status_metadata(device.serial, key)
+                    value_with_unit = f"{status.value} {params.unit}" if params.unit is not None else status.value
+                    
+                    if (status.value != status.code):
                         # Display real-life value and original encoded value
-                        logger.info(f"    {v.name}: {value_with_unit} ('{v.code}')")
+                        logger.info(f"    {params.name}: {value_with_unit} ('{status.code}')")
                     else:
                         # Display real-life value, original encoded value is the same
-                        logger.info(f"    {v.name}: {value_with_unit}")
+                        logger.info(f"    {params.name}: {value_with_unit}")
 
             # Wait one minute and retrieve install statuses again
             logger.info("")

@@ -76,6 +76,11 @@ class DabPumpsParamType(StrEnum):
     LABEL = "label"
 
 
+class DabPumpsStatusCode(StrEnum):
+    DISABLED = "d"
+    HIDDEN = "h"
+
+
 @dataclass
 class DabPumpsInstall:
     id: str
@@ -98,7 +103,6 @@ class DabPumpsInstall:
 
 @dataclass
 class DabPumpsDevice:
-    id: str
     serial: str
     name: str
     vendor: str
@@ -112,7 +116,6 @@ class DabPumpsDevice:
 
 @dataclass
 class DabPumpsParams:
-    key: str
     name: str
     type: DabPumpsParamType
     unit: str
@@ -129,7 +132,7 @@ class DabPumpsParams:
 
 
 @dataclass
-class DabPumpsConfig:
+class DabPumpsDeviceConfig:
     id: str
     label: str
     description: str
@@ -138,7 +141,7 @@ class DabPumpsConfig:
     def __post_init__(self):
         """
         Custom processing in case the dataclass was constructed from a dict
-        status = DabPumpsConfig(**dict)
+        status = DabPumpsDeviceConfig(**dict)
         """
         for meta_key in self.meta_params:
             meta_param = self.meta_params[meta_key]
@@ -149,25 +152,29 @@ class DabPumpsConfig:
 
 @dataclass
 class DabPumpsStatus:
-    serial: str
-    key: str
-    name: str
     code: str
     value: str
-    unit: str
+
+
+@dataclass
+class DabPumpsDeviceState:
     status_ts: datetime|None # utc
-    update_ts: datetime|None # utc
+    status: dict[str, DabPumpsStatus]
 
     def __post_init__(self):
         """
         Custom processing in case the dataclass was constructed from a dict
-        status = DabPumpsStatus(**dict)
+        state = DabPumpsDeviceState(**dict)
         """
         if self.status_ts and isinstance(self.status_ts, str):
             self.status_ts = datetime.fromisoformat(self.status_ts)
 
-        if self.update_ts and isinstance(self.update_ts, str):
-            self.update_ts = datetime.fromisoformat(self.update_ts)
+        for item_key in self.status:
+            item_status = self.status[item_key]
+
+            if item_status and isinstance(item_status, dict):
+                self.status[item_key] = DabPumpsStatus(**item_status)
+
 
 
 class DabPumpsLogin(StrEnum):

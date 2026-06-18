@@ -13,9 +13,11 @@ from .data import (
     DabPumpsParamType,
     DabPumpsInstall,
     DabPumpsDevice,
-    DabPumpsConfig,
+    DabPumpsDeviceConfig,
+    DabPumpsDeviceState,
     DabPumpsParams,
     DabPumpsStatus,
+    DabPumpsStatusCode,
     DabPumpsLogin,
     DabPumpsFetch,
     DabPumpsAuth,
@@ -30,4 +32,8 @@ from .data import (
 # for unit tests
 from .api_async import (
     DabPumpsLogin,
+)
+from .const import (
+    utcnow,
+    utcmin,
 )
