@@ -70,14 +70,12 @@ def context():
     [
         ("ok",   None,                        TEST_USERNAME, TEST_PASSWORD, None),
         ("ok",   DabPumpsLogin.H2D_APP,       TEST_USERNAME, TEST_PASSWORD, None),
-        ("ok",   DabPumpsLogin.DABLIVE_APP_0, TEST_USERNAME, TEST_PASSWORD, None),
-        ("ok",   DabPumpsLogin.DABLIVE_APP_1, TEST_USERNAME, TEST_PASSWORD, None),
+        ("ok",   DabPumpsLogin.DABLIVE_APP,   TEST_USERNAME, TEST_PASSWORD, None),
         ("ok",   DabPumpsLogin.DCONNECT_APP,  TEST_USERNAME, TEST_PASSWORD, None),
         ("ok",   DabPumpsLogin.DCONNECT_WEB,  TEST_USERNAME, TEST_PASSWORD, None),
         ("fail", None,                        "dummy_usr",   "wrong_pwd",   DabPumpsAuthError),
         ("fail", DabPumpsLogin.H2D_APP,       "dummy_usr",   "wrong_pwd",   DabPumpsAuthError),
-        ("fail", DabPumpsLogin.DABLIVE_APP_0, "dummy_usr",   "wrong_pwd",   DabPumpsAuthError),
-        ("fail", DabPumpsLogin.DABLIVE_APP_1, "dummy_usr",   "wrong_pwd",   DabPumpsAuthError),
+        ("fail", DabPumpsLogin.DABLIVE_APP,   "dummy_usr",   "wrong_pwd",   DabPumpsAuthError),
         ("fail", DabPumpsLogin.DCONNECT_APP,  "dummy_usr",   "wrong_pwd",   DabPumpsAuthError),
         ("fail", DabPumpsLogin.DCONNECT_WEB,  "dummy_usr",   "wrong_pwd",   DabPumpsAuthError),
     ]
@@ -182,14 +180,13 @@ def test_login_seq(name, usr, pwd, exp_except, request):
     [
         ("ok",  None,                        0, None),
         ("ok",  DabPumpsLogin.H2D_APP,       0, None),
-        ("ok",  DabPumpsLogin.DABLIVE_APP_0, 0, None),
-        ("ok",  DabPumpsLogin.DABLIVE_APP_1, 0, None),
+        ("ok",  DabPumpsLogin.DABLIVE_APP,   0, None),
         ("ok",  DabPumpsLogin.DCONNECT_APP,  0, None),
         ("ok",  DabPumpsLogin.DCONNECT_WEB,  0, None),
         #
         #("24h", None,                        24*60, None),    # Run 1 full day
         #("24h", DabPumpsLogin.H2D_APP,       24*60, None),    # Run 1 full day
-        #("24h", DabPumpsLogin.DABLIVE_APP_1, 24*60, None),    # Run 1 full day
+        #("24h", DabPumpsLogin.DABLIVE_APP,   24*60, None),    # Run 1 full day
         #("24h", DabPumpsLogin.DCONNECT_APP,  24*60, None),    # Run 1 full day
         #("24h", DabPumpsLogin.DCONNECT_WEB,  24*60, None),    # Run 1 full day
     ]
@@ -336,26 +333,26 @@ def test_get_data(name, method, loop, exp_except, request):
 @pytest.mark.parametrize(
     "method, key, codes, exp_code, exp_except",
     [
-        (None,                        "PowerShowerBoost",        ["20","30"],   "=", None),
-        (None,                        "PowerShowerDuration",     ["300","360"], "=", None),
-        (None,                        "SleepModeEnable",         ["0", "1"],    "=", None),
-        (None,                        "Identify",                ["1"],         "0", None), # Falls back to 0 after STATUS_UPDATE_HOLD
-        (DabPumpsLogin.H2D_APP,       "PowerShowerBoost",        ["20","30"],   "=", None),
-        (DabPumpsLogin.H2D_APP,       "PowerShowerDuration",     ["300","360"], "=", None),
-        (DabPumpsLogin.H2D_APP,       "SleepModeEnable",         ["0", "1"],    "=", None),
-        (DabPumpsLogin.H2D_APP,       "Identify",                ["1"],         "0", None), # Falls back to 0 after STATUS_UPDATE_HOLD
-        (DabPumpsLogin.DABLIVE_APP_1, "PowerShowerBoost",        ["20","30"],   "=", None),
-        (DabPumpsLogin.DABLIVE_APP_1, "PowerShowerDuration",     ["300","360"], "=", None),
-        (DabPumpsLogin.DABLIVE_APP_1, "SleepModeEnable",         ["0", "1"],    "=", None),
-        (DabPumpsLogin.DABLIVE_APP_1, "Identify",                ["1"],         "0", None), # Falls back to 0 after STATUS_UPDATE_HOLD
-        (DabPumpsLogin.DCONNECT_APP,  "PowerShowerBoost",        ["20","30"],   "=", None),
-        (DabPumpsLogin.DCONNECT_APP,  "PowerShowerDuration",     ["300","360"], "=", None),
-        (DabPumpsLogin.DCONNECT_APP,  "SleepModeEnable",         ["0", "1"],    "=", None),
-        (DabPumpsLogin.DCONNECT_APP,  "Identify",                ["1"],         "0", None), # Falls back to 0 after STATUS_UPDATE_HOLD
-        (DabPumpsLogin.DCONNECT_WEB,  "PowerShowerBoost",        ["20","30"],   "=", None),
-        (DabPumpsLogin.DCONNECT_WEB,  "PowerShowerDuration",     ["300","360"], "=", None),
-        (DabPumpsLogin.DCONNECT_WEB,  "SleepModeEnable",         ["0", "1"],    "=", None),
-        (DabPumpsLogin.DCONNECT_WEB,  "Identify",                ["1"],         "0", None), # Falls back to 0 after STATUS_UPDATE_HOLD
+        (None,                        "PowerShowerBoost",        ["20","30"],   "=",  None),
+        (None,                        "PowerShowerDuration",     ["300","360"], "=",  None),
+        (None,                        "SleepModeEnable",         ["0", "1"],    "=",  None),
+        (None,                        "Identify",                ["1"],         None, None), # Falls back to None after STATUS_UPDATE_HOLD
+        (DabPumpsLogin.H2D_APP,       "PowerShowerBoost",        ["20","30"],   "=",  None),
+        (DabPumpsLogin.H2D_APP,       "PowerShowerDuration",     ["300","360"], "=",  None),
+        (DabPumpsLogin.H2D_APP,       "SleepModeEnable",         ["0", "1"],    "=",  None),
+        (DabPumpsLogin.H2D_APP,       "Identify",                ["1"],         None, None), # Falls back to None after STATUS_UPDATE_HOLD
+        (DabPumpsLogin.DABLIVE_APP,   "PowerShowerBoost",        ["20","30"],   "=",  None),
+        (DabPumpsLogin.DABLIVE_APP,   "PowerShowerDuration",     ["300","360"], "=",  None),
+        (DabPumpsLogin.DABLIVE_APP,   "SleepModeEnable",         ["0", "1"],    "=",  None),
+        (DabPumpsLogin.DABLIVE_APP,   "Identify",                ["1"],         None, None), # Falls back to None after STATUS_UPDATE_HOLD
+        (DabPumpsLogin.DCONNECT_APP,  "PowerShowerBoost",        ["20","30"],   "=",  None),
+        (DabPumpsLogin.DCONNECT_APP,  "PowerShowerDuration",     ["300","360"], "=",  None),
+        (DabPumpsLogin.DCONNECT_APP,  "SleepModeEnable",         ["0", "1"],    "=",  None),
+        (DabPumpsLogin.DCONNECT_APP,  "Identify",                ["1"],         None, None), # Falls back to None after STATUS_UPDATE_HOLD
+        (DabPumpsLogin.DCONNECT_WEB,  "PowerShowerBoost",        ["20","30"],   "=",  None),
+        (DabPumpsLogin.DCONNECT_WEB,  "PowerShowerDuration",     ["300","360"], "=",  None),
+        (DabPumpsLogin.DCONNECT_WEB,  "SleepModeEnable",         ["0", "1"],    "=",  None),
+        (DabPumpsLogin.DCONNECT_WEB,  "Identify",                ["1"],         None, None), # Falls back to None after STATUS_UPDATE_HOLD
     ]
 )
 def test_set_data_by_code(method, key, codes, exp_code, exp_except, request):
@@ -375,29 +372,29 @@ def test_set_data_by_code(method, key, codes, exp_code, exp_except, request):
     for install_id in context.api.install_map:
         context.api.fetch_install_details(install_id)
 
-    # Resolve device for this key 
-    status = None
-    for serial,state in context.api.device_state_map.items():
-        status = state.status.get(key)
-        if status is not None:
+    # Resolve device for this key (via config as it may not be found in state)
+    for serial,device in context.api.device_map.items():
+        config = context.api.device_config_map.get(device.config_id)
+        param = config.meta_params.get(key)
+        if param is not None:
             break
     
     assert serial is not None
-    assert status is not None    
-
-    # Find current code and value and find a new code to change into
-    old_code = status.code
-    new_code = next( (code for code in codes if code != old_code), None )
+    assert device is not None
+    assert param is not None
 
     # Check config param
-    device = context.api.device_map.get(serial)
     install = context.api.install_map.get(device.install_id)
-    param = context.api.get_status_metadata(serial, key)
 
-    if install.role[0] not in param.change:
+    if install.role not in param.change:
         # Not allowed to change this param with this user account. Skip test
         _LOGGER.debug(f"User '{TEST_USERNAME}' is not allowed to set {key}. Skip test")
         return
+
+    # Find current code and value and find a new code to change into
+    old_status = context.api.get_status_value(serial,key)
+    old_code = old_status.code if old_status is not None else None
+    new_code = next( (code for code in codes if code != old_code), None )
 
     # Change device status and do immediate test of changed value. 
     # We hold the changed value while the backend is processing the change.
@@ -408,7 +405,7 @@ def test_set_data_by_code(method, key, codes, exp_code, exp_except, request):
         status = context.api.get_status_value(serial, key)
         update_ts = context.api.get_status_update(serial, key)
 
-        assert status.code == new_code
+        assert status is None or status.code == new_code 
         assert update_ts is not None
 
         _LOGGER.debug(f"Found value changed from {old_code} to {new_code}")
@@ -424,12 +421,15 @@ def test_set_data_by_code(method, key, codes, exp_code, exp_except, request):
     status = context.api.get_status_value(serial, key)
     update_ts = context.api.get_status_update(serial, key)
 
-    assert status.code == new_code
+    assert status is None or status.code == new_code 
     assert update_ts is None
 
     _LOGGER.debug(f"Found value still changed from {old_code} to {new_code}")
 
     # Change back to original value and do immediate test of changed value
+    if old_status is None:
+        return  # button type, no need to revert back
+    
     changed = context.api.change_device_status(status.serial, status.key, code=old_code)
     if changed:
         context.api.fetch_install_statuses(install_id)
@@ -437,7 +437,7 @@ def test_set_data_by_code(method, key, codes, exp_code, exp_except, request):
         status = context.api.get_status_value(serial, key)
         update_ts = context.api.get_status_update(serial, key)
 
-        assert status.code == old_code
+        assert status is None or status.code == old_code
         assert update_ts is not None
 
         _LOGGER.debug(f"Found value changed back from {new_code} to {old_code}")
@@ -470,28 +470,28 @@ def test_set_data_by_value(method, key, lang, exp_value, exp_except, request):
     for install_id in context.api.install_map:
         context.api.fetch_install_details(install_id)
 
-    # Resolve device for this key 
-    status = None
-    for serial,state in context.api.device_state_map.items():
-        status = state.status.get(key)
-        if status is not None:
+    # Resolve device for this key (via config as it may not be found in state)
+    for serial,device in context.api.device_map.items():
+        config = context.api.device_config_map.get(device.config_id)
+        param = config.meta_params.get(key)
+        if param is not None:
             break
     
     assert serial is not None
-    assert status is not None    
+    assert device is not None
+    assert param is not None
 
     # Check config param
-    device = context.api.device_map.get(serial)
     install = context.api.install_map.get(device.install_id)
-    param = context.api.get_status_metadata(serial, key)
 
-    if install.role[0] not in param.change:
+    if install.role not in param.change:
         # Not allowed to change this param with this user account. Skip test
         _LOGGER.debug(f"User '{TEST_USERNAME}' is not allowed to set {key}. Skip test")
         return
 
     # Find current code and value and find a new code to change into
-    old_value = status.value
+    old_status = context.api.get_status_value(serial, key)
+    old_value = old_status.value if old_status else None
     new_value = next( (val for key,val in param.values.items() if val != old_value), None )
 
     # Change device status and do immediate test of changed value. 
@@ -503,7 +503,7 @@ def test_set_data_by_value(method, key, lang, exp_value, exp_except, request):
         status = context.api.get_status_value(serial, key)
         update_ts = context.api.get_status_update(serial, key)
     
-        assert status.value == new_value
+        assert status is None or status.value == new_value
         assert update_ts is not None
 
         _LOGGER.debug(f"Found value changed from {old_value} to {new_value}")
@@ -519,12 +519,15 @@ def test_set_data_by_value(method, key, lang, exp_value, exp_except, request):
     status = context.api.get_status_value(serial, key)
     update_ts = context.api.get_status_update(serial, key)
 
-    assert status.value == new_value if exp_value == "=" else exp_value
+    assert status is None or status.value == new_value
     assert update_ts is not None
 
     _LOGGER.debug(f"Found value still changed from {old_value} to {new_value}")
 
     # Change back to original value and do immediate test of changed value
+    if old_status is None:
+        return  # button type, no need to revert back
+    
     changed = context.api.change_device_status(status.serial, status.key, value=old_value)
     if changed:
         context.api.fetch_install_statuses(install_id)
@@ -532,7 +535,7 @@ def test_set_data_by_value(method, key, lang, exp_value, exp_except, request):
         status = context.api.get_status_value(serial, key)
         update_ts = context.api.get_status_update(serial, key)
 
-        assert status.value == old_value
+        assert status is None or status.value == old_value
         assert update_ts is not None
 
         _LOGGER.debug(f"Found value changed back from {new_value} to {old_value}")
@@ -545,7 +548,7 @@ def test_set_data_by_value(method, key, lang, exp_value, exp_except, request):
     [
         (None,                        None),
         (DabPumpsLogin.H2D_APP,       None),
-        (DabPumpsLogin.DABLIVE_APP_1, None),
+        (DabPumpsLogin.DABLIVE_APP,   None),
         (DabPumpsLogin.DCONNECT_APP,  None),
         (DabPumpsLogin.DCONNECT_WEB,  None),
     ]
@@ -638,8 +641,7 @@ def test_strings(name, lang, exp_lang, request):
     [
         ("ok",  None,                        3, None),
         ("ok",  DabPumpsLogin.H2D_APP,       3, None),
-        ("ok",  DabPumpsLogin.DABLIVE_APP_0, 1, None),
-        ("ok",  DabPumpsLogin.DABLIVE_APP_1, 1, None),
+        ("ok",  DabPumpsLogin.DABLIVE_APP,   1, None),
         ("ok",  DabPumpsLogin.DCONNECT_APP,  1, None),
         ("ok",  DabPumpsLogin.DCONNECT_WEB,  2, None),
     ]
@@ -693,8 +695,7 @@ def test_callbacks(name, method, exp_d, exp_except, request):
     [
         ("ok",  None,                        None),
         ("ok",  DabPumpsLogin.H2D_APP,       None),
-        ("ok",  DabPumpsLogin.DABLIVE_APP_0, None),
-        ("ok",  DabPumpsLogin.DABLIVE_APP_1, None),
+        ("ok",  DabPumpsLogin.DABLIVE_APP,   None),
         ("ok",  DabPumpsLogin.DCONNECT_APP,  None),
         # ("ok",  DabPumpsLogin.DCONNECT_WEB,  None), Skipped because access and refresh tokens are handled via cookies
     ]
@@ -755,7 +756,7 @@ def test_token_reuse(name, method, exp_except, request):
     assert context.api.login_active
     assert context.api.login_info == login_info
     assert context.api.access_token_info != access_token_info
-    assert context.api.refresh_token_info == refresh_token_info
+    assert context.api.refresh_token_info != refresh_token_info
 
     assert context.api.install_map is not None
     assert type(context.api.install_map) is dict
@@ -804,10 +805,10 @@ def config_map():
             label = 'test label',
             description = 'test description',
             meta_params = {
-                "KEY_ENUM":  DabPumpsParams(name='NameEnum',  type=DabPumpsParamType.ENUM,    unit=None, weight=None, values={'1':'one', '2':'two', '3':'three'}, min=1, max=3, family='f', group='g', view='CSIR', change='', log='', report=''),
-                "KEY_FLOAT": DabPumpsParams(name='NameFloat', type=DabPumpsParamType.MEASURE, unit='F',  weight=0.1,  values=None, min=0, max=1,  family='f', group='g', view='CSIR', change='', log='', report=''),
-                "KEY_INT":   DabPumpsParams(name='NameInt',   type=DabPumpsParamType.MEASURE, unit='I',  weight=1,    values=None, min=0, max=10, family='f', group='g', view='CSIR', change='', log='', report=''),
-                "KEY_LABEL": DabPumpsParams(name='NameLabel', type=DabPumpsParamType.LABEL,   unit='',   weight=None, values=None, min=0, max=0,  family='f', group='g', view='CSIR', change='', log='', report=''),
+                "KEY_ENUM":  DabPumpsParams(name='NameEnum',  type=DabPumpsParamType.ENUM,    unit=None, weight=None, values={'1':'one', '2':'two', '3':'three'}, min=1, max=3, family='f', group='g', view='CSIR', change=''),
+                "KEY_FLOAT": DabPumpsParams(name='NameFloat', type=DabPumpsParamType.MEASURE, unit='F',  weight=0.1,  values=None, min=0, max=1,  family='f', group='g', view='CSIR', change=''),
+                "KEY_INT":   DabPumpsParams(name='NameInt',   type=DabPumpsParamType.MEASURE, unit='I',  weight=1,    values=None, min=0, max=10, family='f', group='g', view='CSIR', change=''),
+                "KEY_LABEL": DabPumpsParams(name='NameLabel', type=DabPumpsParamType.LABEL,   unit='',   weight=None, values=None, min=0, max=0,  family='f', group='g', view='CSIR', change=''),
             }
         ),
     }

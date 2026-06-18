@@ -30,8 +30,7 @@ class DabPumpsLogin(StrEnum):
     ACCESS_TOKEN = 'Access-Token'
     REFRESH_TOKEN = 'Refresh-Token'
     H2D_APP = 'H2D-app'                 # Uses DabCS with Authorization Header
-    DABLIVE_APP_0 = 'DabLive-app_0'     # Uses DConnect with Authorization Header
-    DABLIVE_APP_1 = 'DabLive-app_1'     # Uses DConnect with Authorization Header
+    DABLIVE_APP = 'DabLive-app'         # Uses DConnect with Authorization Header
     DCONNECT_APP = 'DConnect-app'       # Uses DConnect with Authorization Header
     DCONNECT_WEB = 'DConnect-web'       # Uses DConnect with Cookie
 
@@ -54,20 +53,6 @@ class DabPumpsUserRole(StrEnum):
     LOCAL_CONFIG = "LOCALCONFIG"
     SERVICE = "SERVICE"
     R_AND_D = "R&D"
-
-    @staticmethod
-    def to_char(role: str):
-        match role:
-            case DabPumpsUserRole.CUSTOMER: return 'C'
-            case DabPumpsUserRole.CUSTOMER_PRO: return 'C'  # mapped to just Customer
-            case DabPumpsUserRole.CUSTOMER_FREE: return 'c'
-            case DabPumpsUserRole.INSTALLER: return 'I'
-            case DabPumpsUserRole.INSTALLER_FREE: return 'i'
-            case DabPumpsUserRole.LOCAL_INSTALLER: return 'L'
-            case DabPumpsUserRole.LOCAL_CONFIG: return 'l'
-            case DabPumpsUserRole.SERVICE: return 'S'
-            case DabPumpsUserRole.R_AND_D: return 'R'
-            case _: return 'C'
 
 
 class DabPumpsParamType(StrEnum):
@@ -125,10 +110,8 @@ class DabPumpsParams:
     max: float|None
     family: str
     group: str
-    view: str
-    change: str
-    log: str
-    report: str
+    view: list[DabPumpsUserRole]
+    change: list[DabPumpsUserRole]
 
 
 @dataclass
@@ -175,24 +158,6 @@ class DabPumpsDeviceState:
             if item_status and isinstance(item_status, dict):
                 self.status[item_key] = DabPumpsStatus(**item_status)
 
-
-
-class DabPumpsLogin(StrEnum):
-    ACCESS_TOKEN = 'Access-Token'
-    REFRESH_TOKEN = 'Refresh-Token'
-    H2D_APP = 'H2D-app'                 # Uses DabCS with Authorization Header
-    DABLIVE_APP_0 = 'DabLive-app_0'     # Uses DConnect with Authorization Header
-    DABLIVE_APP_1 = 'DabLive-app_1'     # Uses DConnect with Authorization Header
-    DCONNECT_APP = 'DConnect-app'       # Uses DConnect with Authorization Header
-    DCONNECT_WEB = 'DConnect-web'       # Uses DConnect with Cookie
-
-class DabPumpsFetch(StrEnum):
-    DABCS = DABCS_API_DOMAIN,
-    DCONNECT = DCONNECT_API_DOMAIN
-
-class DabPumpsAuth(StrEnum):
-    HEADER = "Authorization Header"
-    COOKIE = "Cookie"
 
 
 @dataclass

@@ -207,7 +207,7 @@ class AsyncDabPumps:
         old_refresh_token_info = self._refresh_token_info
 
         if test_method is None:
-            methods = [DabPumpsLogin.ACCESS_TOKEN, DabPumpsLogin.REFRESH_TOKEN, self._login_info.login_method, DabPumpsLogin.H2D_APP, DabPumpsLogin.DABLIVE_APP_1, DabPumpsLogin.DABLIVE_APP_0, DabPumpsLogin.DCONNECT_APP, DabPumpsLogin.DCONNECT_WEB]
+            methods = [DabPumpsLogin.ACCESS_TOKEN, DabPumpsLogin.REFRESH_TOKEN, self._login_info.login_method, DabPumpsLogin.H2D_APP, DabPumpsLogin.DABLIVE_APP, DabPumpsLogin.DCONNECT_APP, DabPumpsLogin.DCONNECT_WEB]
         else:
             methods = [test_method]
             
@@ -223,12 +223,9 @@ class AsyncDabPumps:
                     case DabPumpsLogin.H2D_APP:
                         # Try the procedure of the H2D app (most up to date)
                         success = await self._login_h2d_app()
-                    case DabPumpsLogin.DABLIVE_APP_1: 
+                    case DabPumpsLogin.DABLIVE_APP: 
                         # Try the simplest method
-                        success = await self._login_dablive_app(isDabLive=1)
-                    case DabPumpsLogin.DABLIVE_APP_0:
-                        # Try the alternative simplest method
-                        success = await self._login_dablive_app(isDabLive=0)
+                        success = await self._login_dablive_app()
                     case DabPumpsLogin.DCONNECT_APP:
                         # Try the method that uses 2 steps
                         success = await self._login_dconnect_app()
@@ -462,16 +459,16 @@ class AsyncDabPumps:
         return True
 
         
-    async def _login_dablive_app(self, isDabLive=1) -> bool:
+    async def _login_dablive_app(self) -> bool:
         """Login to DAB Pumps via the method as used by the DAB Live app"""
 
         # Step 1: get authorization token
-        context = f"login via DabLive App (isDabLive={isDabLive})"
+        context = f"login via DabLive App"
         request = {
             "method": "POST",
             "url": DCONNECT_API_URL + f"/auth/token",
             "params": {
-                'isDabLive': isDabLive,     # required param, though actual value seems to be completely ignored
+                'isDabLive': 1,     # required param, though actual value seems to be completely ignored
             },
             "headers": {
                 'Content-Type': 'application/x-www-form-urlencoded',
@@ -482,7 +479,7 @@ class AsyncDabPumps:
             },
         }
         
-        _LOGGER.debug(f"Try login with DabLive; authenticate '{self._username}' via {request["method"]} {request["url"]} with isDabLive={isDabLive}")
+        _LOGGER.debug(f"Try login with DabLive; authenticate '{self._username}' via {request["method"]} {request["url"]}")
         result = await self._send_request(context, request)
 
         self._access_token_info = DabPumpsAccessTokenInfo(
@@ -503,7 +500,7 @@ class AsyncDabPumps:
 
         # if we reach this point then the token was OK
         self._login_info = DabPumpsLoginInfo(
-            login_method = DabPumpsLogin.DABLIVE_APP_1 if isDabLive else DabPumpsLogin.DABLIVE_APP_0,
+            login_method = DabPumpsLogin.DABLIVE_APP,
         )
         _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
         return True
@@ -954,6 +951,8 @@ class AsyncDabPumps:
             param_max = meta_param.get('max') or meta_param.get('warn_hi')
             param_family = meta_param.get('family') or ''
             param_group = meta_param.get('group') or ''
+            param_view = meta_param.get('view') or []
+            param_change = meta_param.get('change') or []
             
             values = meta_param.get('values') or []
             param_values = { str(v[0]): self._translate_string(str(v[1])) for v in values if len(v) >= 2 }
@@ -968,10 +967,8 @@ class AsyncDabPumps:
                 max = param_max,
                 family = param_family,
                 group = param_group,
-                view = ''.join([ DabPumpsUserRole.to_char(s) for s in (meta_param.get('view') or []) ]),
-                change = ''.join([ DabPumpsUserRole.to_char(s) for s in (meta_param.get('change') or []) ]),
-                log = ''.join([ DabPumpsUserRole.to_char(s) for s in (meta_param.get('log') or []) ]),
-                report = ''.join([ DabPumpsUserRole.to_char(s) for s in (meta_param.get('report') or []) ])
+                view = param_view,
+                change = param_change,
             )
             conf_params[param_name] = param
         
@@ -1339,7 +1336,7 @@ class AsyncDabPumps:
         if code is None or code in DabPumpsStatusCode:
             return (code, params.unit)
         
-        # param:DabPumpsParams - 'key, type, unit, weight, values, min, max, family, group, view, change, log, report'
+        # param:DabPumpsParams - 'key, type, unit, weight, values, min, max, family, group, view, change'
         match params.type:
             case DabPumpsParamType.ENUM:
                 # Lookup value (already translated)
@@ -1379,7 +1376,7 @@ class AsyncDabPumps:
         if params is None or value is None:
             return str(value)
         
-        # param:DabPumpsParams - 'key, type, unit, weight, values, min, max, family, group, view, change, log, report'
+        # param:DabPumpsParams - 'key, type, unit, weight, values, min, max, family, group, view, change'
         match params.type:
             case DabPumpsParamType.ENUM:
                 code = next( (str(k) for k,v in params.values.items() if v==value), None)

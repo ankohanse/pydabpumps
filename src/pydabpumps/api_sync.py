@@ -97,16 +97,11 @@ class DabPumps:
         self._device_map: dict[str, DabPumpsDevice] = {}                # serial => device def
         self._device_config_map: dict[str, DabPumpsDeviceConfig] = {}   # config_id => device config
         self._device_state_map: dict[str, DabPumpsDeviceState] = {}     # serial => device state
-        self._status_update_map: dict[str, datetime] = {}               # id(serial,key) -> datetime
         self._string_map: dict[str, str] = {}                           # key => translation
         self._string_map_lang: str = None
 
-        self._install_map_ts: dict[str, datetime] = {}
-        self._device_map_ts: dict[str, datetime] = {}
-        self._device_detail_ts: dict[str, datetime] = {}
-        self._device_config_map_ts: dict[str, datetime] = {}
-        self._device_state_map_ts: dict[str, datetime] = {}
-        self._string_map_ts: datetime = datetime.min
+        # Internal admin of which status values have a pending update
+        self._status_update_map: dict[str, datetime] = {}               # id(serial+key) -> datetime
 
         # Http Client; we keep the same client for the whole life of the api instance.
         self._http_client: httpx.Client = client or httpx.Client()
@@ -171,30 +166,7 @@ class DabPumps:
     def string_map_lang(self) -> str:
         return self._string_map_lang
 
-    @property
-    def install_map_ts(self) -> datetime:
-        return self._install_map_ts
-    
-    @property
-    def device_map_ts(self) -> datetime:
-        return self._device_map_ts
-    
-    @property
-    def device_detail_ts(self) -> datetime:
-        return self._device_detail_ts
-    
-    @property
-    def device_config_map_ts(self) -> dict[str,datetime]:
-        return self._device_config_map_ts
-    
-    @property
-    def state_map_ts(self) -> datetime:
-        return self._state_map_ts
-    
-    @property
-    def string_map_ts(self) -> datetime:
-        return self._string_map_ts
-    
+
     @property
     def closed(self) -> bool:
         """Returns whether the DabPumps api has been closed."""
@@ -238,7 +210,7 @@ class DabPumps:
         old_refresh_token_info = self._refresh_token_info
 
         if test_method is None:
-            methods = [DabPumpsLogin.ACCESS_TOKEN, DabPumpsLogin.REFRESH_TOKEN, self._login_info.login_method, DabPumpsLogin.H2D_APP, DabPumpsLogin.DABLIVE_APP_1, DabPumpsLogin.DABLIVE_APP_0, DabPumpsLogin.DCONNECT_APP, DabPumpsLogin.DCONNECT_WEB]
+            methods = [DabPumpsLogin.ACCESS_TOKEN, DabPumpsLogin.REFRESH_TOKEN, self._login_info.login_method, DabPumpsLogin.H2D_APP, DabPumpsLogin.DABLIVE_APP, DabPumpsLogin.DCONNECT_APP, DabPumpsLogin.DCONNECT_WEB]
         else:
             methods = [test_method]
             
@@ -254,12 +226,9 @@ class DabPumps:
                     case DabPumpsLogin.H2D_APP:
                         # Try the procedure of the H2D app (most up to date)
                         success = self._login_h2d_app()
-                    case DabPumpsLogin.DABLIVE_APP_1: 
+                    case DabPumpsLogin.DABLIVE_APP: 
                         # Try the simplest method
-                        success = self._login_dablive_app(isDabLive=1)
-                    case DabPumpsLogin.DABLIVE_APP_0:
-                        # Try the alternative simplest method
-                        success = self._login_dablive_app(isDabLive=0)
+                        success = self._login_dablive_app()
                     case DabPumpsLogin.DCONNECT_APP:
                         # Try the method that uses 2 steps
                         success = self._login_dconnect_app()
@@ -493,16 +462,16 @@ class DabPumps:
         return True
 
         
-    def _login_dablive_app(self, isDabLive=1) -> bool:
+    def _login_dablive_app(self) -> bool:
         """Login to DAB Pumps via the method as used by the DAB Live app"""
 
         # Step 1: get authorization token
-        context = f"login via DabLive App (isDabLive={isDabLive})"
+        context = f"login via DabLive App"
         request = {
             "method": "POST",
             "url": DCONNECT_API_URL + f"/auth/token",
             "params": {
-                'isDabLive': isDabLive,     # required param, though actual value seems to be completely ignored
+                'isDabLive': 1,     # required param, though actual value seems to be completely ignored
             },
             "headers": {
                 'Content-Type': 'application/x-www-form-urlencoded',
@@ -513,7 +482,7 @@ class DabPumps:
             },
         }
         
-        _LOGGER.debug(f"Try login with DabLive; authenticate '{self._username}' via {request["method"]} {request["url"]} with isDabLive={isDabLive}")
+        _LOGGER.debug(f"Try login with DabLive; authenticate '{self._username}' via {request["method"]} {request["url"]}")
         result = self._send_request(context, request)
 
         self._access_token_info = DabPumpsAccessTokenInfo(
@@ -534,7 +503,7 @@ class DabPumps:
 
         # if we reach this point then the token was OK
         self._login_info = DabPumpsLoginInfo(
-            login_method = DabPumpsLogin.DABLIVE_APP_1 if isDabLive else DabPumpsLogin.DABLIVE_APP_0,
+            login_method = DabPumpsLogin.DABLIVE_APP,
         )
         _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
         return True
@@ -787,7 +756,6 @@ class DabPumps:
             raise DabPumpsDataError(f"No installations found in data")
 
         # Remember this data
-        self._install_map_ts = utcnow()
         self._install_map = install_map
 
 
@@ -909,7 +877,6 @@ class DabPumps:
             raise DabPumpsDataError(f"No devices found for installation id {install_id}")
 
         # Remember/update the found map.
-        self._device_map_ts = utcnow()
         self._device_map.update(device_map)
 
         # Cleanup devices from this installation that are no longer needed in _device_map
@@ -965,8 +932,6 @@ class DabPumps:
                 conf_id = None
 
         # Process the resulting raw data
-        config_map = {}
-
         conf_id = conf_id or conf.get('configuration_id') or ''
         conf_name = conf.get('name') or conf.get('ProductName') or f"config {conf_id}"
         conf_label = conf.get('label') or conf.get('family') or f"config {conf_id}"
@@ -989,6 +954,8 @@ class DabPumps:
             param_max = meta_param.get('max') or meta_param.get('warn_hi')
             param_family = meta_param.get('family') or ''
             param_group = meta_param.get('group') or ''
+            param_view = meta_param.get('view') or []
+            param_change = meta_param.get('change') or []
             
             values = meta_param.get('values') or []
             param_values = { str(v[0]): self._translate_string(str(v[1])) for v in values if len(v) >= 2 }
@@ -1003,10 +970,8 @@ class DabPumps:
                 max = param_max,
                 family = param_family,
                 group = param_group,
-                view = ''.join([ DabPumpsUserRole.to_char(s) for s in (meta_param.get('view') or []) ]),
-                change = ''.join([ DabPumpsUserRole.to_char(s) for s in (meta_param.get('change') or []) ]),
-                log = ''.join([ DabPumpsUserRole.to_char(s) for s in (meta_param.get('log') or []) ]),
-                report = ''.join([ DabPumpsUserRole.to_char(s) for s in (meta_param.get('report') or []) ])
+                view = param_view,
+                change = param_change,
             )
             conf_params[param_name] = param
         
@@ -1016,16 +981,14 @@ class DabPumps:
             description = conf_descr,
             meta_params = conf_params
         )
-        config_map[conf_id] = config
         
-        if len(config_map) == 0:
+        if len(conf_params) == 0:
             raise DabPumpsDataError(f"No config found for '{config_id}'")
         
         _LOGGER.debug(f"Configuration found: {conf_name} with {len(conf_params)} metadata params")        
 
         # Merge with configurations from other devices
-        self._device_config_map_ts[conf_id] = utcnow()
-        self._device_config_map.update(config_map)
+        self._device_config_map[conf_id] = config
         
 
     def _fetch_device_state(self, serial: str, raw_install_data: dict|None = None):
@@ -1121,7 +1084,6 @@ class DabPumps:
             status_ts = status_ts,
             status = status,
         )
-        self._device_state_map_ts[serial] = utcnow()
         
         
     def _derive_device_details(self, serial: str):
@@ -1148,8 +1110,6 @@ class DabPumps:
                     if getattr(device, attr) != status.value:
                         _LOGGER.debug(f"Found extra device attribute {device.serial} {attr} = {status.value}")
                         setattr(device, attr, status.value)
-
-        self._device_detail_ts[serial] = utcnow()
 
 
     def change_device_status(self, serial: str, key: str, code: str|None=None, value: Any|None=None):
@@ -1317,7 +1277,6 @@ class DabPumps:
         _LOGGER.debug(f"Strings found: {len(string_map)} in language '{language}'")
         
         # Remember this data
-        self._string_map_ts = utcnow() if len(string_map) > 0 else utcmin()
         self._string_map_lang = language
         self._string_map = string_map
 
@@ -1380,7 +1339,7 @@ class DabPumps:
         if code is None or code in DabPumpsStatusCode:
             return (code, params.unit)
         
-        # param:DabPumpsParams - 'key, type, unit, weight, values, min, max, family, group, view, change, log, report'
+        # param:DabPumpsParams - 'key, type, unit, weight, values, min, max, family, group, view, change'
         match params.type:
             case DabPumpsParamType.ENUM:
                 # Lookup value (already translated)
@@ -1420,7 +1379,7 @@ class DabPumps:
         if params is None or value is None:
             return str(value)
         
-        # param:DabPumpsParams - 'key, type, unit, weight, values, min, max, family, group, view, change, log, report'
+        # param:DabPumpsParams - 'key, type, unit, weight, values, min, max, family, group, view, change'
         match params.type:
             case DabPumpsParamType.ENUM:
                 code = next( (str(k) for k,v in params.values.items() if v==value), None)
