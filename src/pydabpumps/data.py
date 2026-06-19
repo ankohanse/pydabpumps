@@ -1,11 +1,13 @@
 from datetime import datetime
 import logging
+import secrets
 
 from dataclasses import dataclass
 from enum import StrEnum
 
 from .const import (
     DABCS_API_DOMAIN,
+    DABCS_AUTH,
     DCONNECT_API_DOMAIN,
     DCONNECT_APP_USER_AGENT,
 )
@@ -161,7 +163,7 @@ class DabPumpsDeviceState:
 
 
 @dataclass
-class DabPumpsLoginInfo():
+class DabPumpsLoginInfo:
     login_method: DabPumpsLogin = None
 
     @property
@@ -187,7 +189,7 @@ class DabPumpsLoginInfo():
 
 
 @dataclass
-class DabPumpsAccessTokenInfo():
+class DabPumpsAccessTokenInfo:
     token: str = None
     expiry: datetime = None
 
@@ -201,7 +203,7 @@ class DabPumpsAccessTokenInfo():
 
 
 @dataclass
-class DabPumpsRefreshTokenInfo():
+class DabPumpsRefreshTokenInfo:
     token: str = None
     expiry: datetime = None
     client_id: str = None
@@ -214,6 +216,14 @@ class DabPumpsRefreshTokenInfo():
         """
         if self.expiry and isinstance(self.expiry, str):
             self.expiry = datetime.fromisoformat(self.expiry)
+
+
+@dataclass
+class DabPumpsSessionInfo:
+    dabcs_auth: str = DABCS_AUTH
+    dabcs_device: str = secrets.token_hex(8)
+    key: str = None
+    wstoken: str = None
 
 
 @dataclass

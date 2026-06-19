@@ -24,6 +24,7 @@ from .data import (
     DabPumpsLoginInfo,
     DabPumpsAccessTokenInfo,
     DabPumpsRefreshTokenInfo,
+    DabPumpsSessionInfo,
     DabPumpsHistoryItem,
     DabPumpsHistoryDetail,
     DabPumpsDictFactory,

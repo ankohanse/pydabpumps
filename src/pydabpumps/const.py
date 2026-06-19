@@ -12,6 +12,7 @@ DABCS_API_DOMAIN = "api.eu.dabcs.it"
 DABCS_INIT_URL = DABCS_API_URL + "/mobile/v1/initialconfig"
 DABCS_ACCESS_TOKEN_VALID = 5*60  # 5 minutes in seconds
 DABCS_REFRESH_TOKEN_VALID = 30*24*60*60 # 30 days in seconds
+DABCS_AUTH = "vwLbTh3HKJdjHRHzdEHen43PyffAc9gK"
 
 # DCONNECT is used for DABLIVE_APP, DCONNECT_APP and DCONNECT_WEB
 DCONNECT_API_URL = "https://dconnect.dabpumps.com"

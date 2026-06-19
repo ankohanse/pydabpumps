@@ -25,6 +25,7 @@ from pydabpumps import (
     DabPumpsHistoryItem, 
     DabPumpsHistoryDetail,
     DabPumpsLogin,
+    DabPumpsFetch,
     utcnow,
     utcmin,
 )
@@ -102,6 +103,12 @@ async def test_login(name, method, usr, pwd, exp_except, request):
             assert context.api.refresh_token_info is not None
             assert context.api.refresh_token_info.token is not None
             assert context.api.refresh_token_info.expiry > utcmin()
+
+        if context.api.login_info.fetch_method == DabPumpsFetch.DABCS:
+            assert context.api.session_info.dabcs_auth is not None
+            assert context.api.session_info.dabcs_device is not None            
+            assert context.api.session_info.key is not None
+            assert context.api.session_info.wstoken is not None
 
         assert context.api.install_map is not None
         assert context.api.device_map is not None

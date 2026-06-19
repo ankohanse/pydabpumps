@@ -68,6 +68,7 @@ from .data import (
     DabPumpsLoginInfo,
     DabPumpsAccessTokenInfo,
     DabPumpsRefreshTokenInfo,
+    DabPumpsSessionInfo,
     DabPumpsHistoryItem,
     DabPumpsHistoryDetail,
 )
@@ -78,7 +79,7 @@ _LOGGER = logging.getLogger(__name__)
 # DabPumps api to detect device and get device info, fetch the actual data from the device, and parse it
 class AsyncDabPumps:
     
-    def __init__(self, username, password, client:httpx.AsyncClient=None, login_info:DabPumpsLoginInfo=None, access_token_info:DabPumpsAccessTokenInfo=None, refresh_token_info:DabPumpsRefreshTokenInfo=None):
+    def __init__(self, username, password, client:httpx.AsyncClient=None, login_info:DabPumpsLoginInfo=None, access_token_info:DabPumpsAccessTokenInfo=None, refresh_token_info:DabPumpsRefreshTokenInfo=None, session_info:DabPumpsSessionInfo=None):
         # Configuration
         self._username: str = username
         self._password: str = password
@@ -88,6 +89,7 @@ class AsyncDabPumps:
         self._login_info: DabPumpsLoginInfo = login_info or DabPumpsLoginInfo()
         self._access_token_info: DabPumpsAccessTokenInfo = access_token_info or DabPumpsAccessTokenInfo()
         self._refresh_token_info: DabPumpsRefreshTokenInfo = refresh_token_info or DabPumpsRefreshTokenInfo()
+        self._session_info: DabPumpsSessionInfo = session_info or DabPumpsSessionInfo()
 
         # Retrieved data
         self._install_map: dict[str, DabPumpsInstall] = {}              # install_id => install
@@ -140,6 +142,10 @@ class AsyncDabPumps:
         return self._refresh_token_info
     
     @property
+    def session_info(self) -> DabPumpsSessionInfo:
+        return self._session_info
+    
+    @property
     def install_map(self) -> dict[str, DabPumpsInstall]:
         return self._install_map
     
@@ -175,6 +181,8 @@ class AsyncDabPumps:
 
     async def close(self):
         """Safely logout and close all client handles"""
+        await self.logout()
+
         if self._http_client is not None and self._http_client_close:
             await self._http_client.aclose()
             self._http_client = None
@@ -191,6 +199,9 @@ class AsyncDabPumps:
         async with self._login_lock:
             await self._login(test_method=test_method)
 
+        # Start a new session if needed
+        await self._start_session()
+
 
     async def _login(self, test_method:DabPumpsLogin=None):
         """Login to DAB Pumps by trying each of the possible login methods"""        
@@ -202,10 +213,7 @@ class AsyncDabPumps:
         # - Finally try all login methods
         # For testing we can force to use a specific method
         error = None
-        old_login_info = self._login_info
-        old_access_token_info = self._access_token_info
-        old_refresh_token_info = self._refresh_token_info
-
+        
         if test_method is None:
             methods = [DabPumpsLogin.ACCESS_TOKEN, DabPumpsLogin.REFRESH_TOKEN, self._login_info.login_method, DabPumpsLogin.H2D_APP, DabPumpsLogin.DABLIVE_APP, DabPumpsLogin.DCONNECT_APP, DabPumpsLogin.DCONNECT_WEB]
         else:
@@ -245,6 +253,9 @@ class AsyncDabPumps:
                 error = ex
 
                 # Clear any previous login cookies and tokens before trying the next method
+                if method not in [DabPumpsLogin.ACCESS_TOKEN]:
+                    await self._stop_session()
+
                 await self._logout(context="login", method=method)
 
         # if we reached this point then all methods failed.
@@ -313,7 +324,7 @@ class AsyncDabPumps:
             },
         }
         
-        _LOGGER.debug(f"Try refresh the access-token; authenticate via {request["method"]} {request["url"]}")
+        _LOGGER.debug(f"Try refresh the access-token")
         result = await self._send_request(context, request)
 
         # Store access-token in variable so it will be added as Authorization header in calls to DABCS and DConnect
@@ -373,7 +384,7 @@ class AsyncDabPumps:
             },
         }
 
-        _LOGGER.debug(f"Try login with H2D; retrieve auth page via {request["method"]}  {request["url"]}")
+        _LOGGER.debug(f"Try login with H2D; retrieve auth page")
         text = await self._send_request(context, request)
         
         match = re.search(r'action\s?=\s?\"(.*?)\"', text, re.MULTILINE)
@@ -399,7 +410,7 @@ class AsyncDabPumps:
             }
         }
         
-        _LOGGER.debug(f"Try login with H2D; authenticate '{self._username}' via {request["method"]} {request["url"]}")
+        _LOGGER.debug(f"Try login with H2D; authenticate '{self._username}'")
         location_str = await self._send_request(context, request)
 
         # Returned value is a redirect location containing state and session_state
@@ -432,7 +443,7 @@ class AsyncDabPumps:
             },
         }
         
-        _LOGGER.debug(f"Try login with H2D; retrieve tokens via {request["method"]} {request["url"]}")
+        _LOGGER.debug(f"Try login with H2D; retrieve tokens")
         result = await self._send_request(context, request)
         
         self._access_token_info = DabPumpsAccessTokenInfo(
@@ -479,7 +490,7 @@ class AsyncDabPumps:
             },
         }
         
-        _LOGGER.debug(f"Try login with DabLive; authenticate '{self._username}' via {request["method"]} {request["url"]}")
+        _LOGGER.debug(f"Try login with DabLive; authenticate '{self._username}'")
         result = await self._send_request(context, request)
 
         self._access_token_info = DabPumpsAccessTokenInfo(
@@ -530,7 +541,7 @@ class AsyncDabPumps:
             },
         }
         
-        _LOGGER.debug(f"Try login with DConnect (app); authenticate '{self._username}' via {request["method"]} {request["url"]}")
+        _LOGGER.debug(f"Try login with DConnect (app); authenticate '{self._username}'")
         result = await self._send_request(context, request)
 
         self._access_token_info = DabPumpsAccessTokenInfo(
@@ -567,7 +578,7 @@ class AsyncDabPumps:
             "url": DCONNECT_API_URL,
         }
 
-        _LOGGER.debug(f"Try login with DConnect (web); retrieve login page via {request["method"]} {request["url"]}")
+        _LOGGER.debug(f"Try login with DConnect (web); retrieve login page")
         text = await self._send_request(context, request)
         
         match = re.search(r'action\s?=\s?\"(.*?)\"', text, re.MULTILINE)
@@ -590,7 +601,7 @@ class AsyncDabPumps:
             },
         }
         
-        _LOGGER.debug(f"Try login with DConnect (web); authenticate '{self._username}' via {request["method"]} {request["url"]}")
+        _LOGGER.debug(f"Try login with DConnect (web); authenticate '{self._username}'")
         await self._send_request(context, request)
 
         # Verify the client access_token cookie has been set
@@ -620,14 +631,114 @@ class AsyncDabPumps:
         )
         _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
         return True
+    
+
+    async def _start_session(self):
+        """
+        Open/Start a new session. Needed to open a direct socket connection
+        """
+        if self._session_info.key is not None and self._session_info.wstoken is not None:
+            # Already have the session key and websocket token
+            return True
+
+        # Step 1: start session
+        match self._login_info.fetch_method:
+            case DabPumpsFetch.DABCS:    url = DABCS_API_URL + '/mobile/v1/user/session?destroyothers=1'
+            case DabPumpsFetch.DCONNECT: return False   # No support for session / websocket / cloud push
+
+        context = f"session start {self._username.lower()}"
+        request = {
+            "method": "POST",
+            "url": url,
+            "headers": {
+                "x-dabcs-auth": self._session_info.dabcs_auth,
+                "x-dabcs-device": self.session_info.dabcs_device,
+            },
+        }
+
+        _LOGGER.debug(f"Start session for '{self._username}'")
+        raw = await self._send_request(context, request)  
+
+        # Process the resulting raw data
+        # For DabCS:
+        # {
+        #   "session_key": "5345cd70-6936-11f1-aa20-59153c4f37a5"
+        # }
+        self._session_info.key = raw.get('session_key')
+            
+        if self._session_info.key is None:
+            return False
+
+        # Step 2: get wstoken
+        match self._login_info.fetch_method:
+            case DabPumpsFetch.DABCS:    url = DABCS_API_URL + '/mobile/v1/user/wstoken'
+            case DabPumpsFetch.DCONNECT: url = DABCS_API_URL + '/mobile/v1/user/wstoken'
+
+        context = f"session wstoken {self._username.lower()}"
+        request = {
+            "method": "POST",
+            "url": url,
+            "headers": {
+                "x-dabcs-auth": self._session_info.dabcs_auth,
+                "x-dabcs-device": self.session_info.dabcs_device,
+                "x-session-token": self.session_info.key
+            }
+        }
+
+        _LOGGER.debug(f"Retrieve session wstoken")
+        raw = await self._send_request(context, request)  
+
+        # Process the resulting raw data
+        # For DabCS:
+        # {
+        #   "token": "NTcyYzc1MWQ5ZGI4OGQ5NGY4MGUyNWY3ZmIwNjJmYzU0NC53ICYwJwo8MXdvd2IzM2xjZGdjeDRhNDB4YWU2bXg0NmFheGw3ZzY3bWIzbGZmZnd5dzw7JiE0OTk0ITw6Owo8MSZ3bw53N2RsZWFsYWF4bTMwYHhhYzZkeG1jMWZ4bGxhZzRiYWxkYDFsd3l3ZDY0YDQzbGd4ZTBnMXhhYjNieG00YmR4NmRsMGxsY2NkbWFtdwh5dzAtJXdvZGJtZG1gYGVsZWZkZyg="
+        # }
+        self._session_info.wstoken = raw.get('token')
+
+        if self._session_info.wstoken is None:
+            return False        
+        
+        return True
 
         
+    async def _stop_session(self):
+        """
+        Close/Stop session.
+        """
+        if self._session_info.key is None:
+            # No current session
+            return True
+
+        match self._login_info.fetch_method:
+            case DabPumpsFetch.DABCS:    url = DABCS_API_URL + '/mobile/v1/user/session'
+            case DabPumpsFetch.DCONNECT: return False   # No support for session / websocket / cloud push
+
+        context = f"session start {self._username.lower()}"
+        request = {
+            "method": "DELETE",
+            "url": url,
+            "headers": {
+                "x-dabcs-auth": self._session_info.dabcs_auth,
+                "x-dabcs-device": self.session_info.dabcs_device,
+                "x-session-token": self.session_info.key
+            }
+        }
+
+        _LOGGER.debug(f"Stop session for '{self._username}'")
+        raw = await self._send_request(context, request)  
+
+        self._session_info.key = None
+        self._session_info.wstoken = None
+        return True
+
+
     async def logout(self):
         """Logout from DAB Pumps"""
 
         # Only one thread at a time can check token cookie and do subsequent login or logout if needed.
         # Once one thread is done, the next thread can then check the (new) token cookie.
         async with self._login_lock:
+            await self._stop_session()
             await self._logout(context="", method=None)
 
 
@@ -709,7 +820,7 @@ class AsyncDabPumps:
             "url": url,
         }
 
-        _LOGGER.debug(f"Retrieve installation list for '{self._username}' via {request["method"]} {request["url"]}")
+        _LOGGER.debug(f"Retrieve installation list for '{self._username}'")
         raw = await self._send_request(context, request)  
 
         # Process the resulting raw data
@@ -793,7 +904,7 @@ class AsyncDabPumps:
                 context = f"statuses {install_id}"
                 request = { "method": "GET", "url": DABCS_API_URL + f"/mobile/v1/installations/{install_id}/dums" }
         
-                _LOGGER.debug(f"Retrieve installation statuses via {request["method"]} {request["url"]}")
+                _LOGGER.debug(f"Retrieve installation statuses")
                 raw = await self._send_request(context, request)
 
             case DabPumpsFetch.DCONNECT:
@@ -818,7 +929,7 @@ class AsyncDabPumps:
             "url": url,
         }
         
-        _LOGGER.debug(f"Retrieve installation details via {request["method"]} {request["url"]}")
+        _LOGGER.debug(f"Retrieve installation details")
         raw = await self._send_request(context, request)
 
         # Process the resulting raw data
@@ -919,7 +1030,7 @@ class AsyncDabPumps:
                 context = f"configuration {config_id}"
                 request = { "method": "GET", "url":  DCONNECT_API_URL + f"/api/v1/configuration/{config_id}" }
         
-                _LOGGER.debug(f"Retrieve device config for '{config_id}' via {request["method"]} {request["url"]}")
+                _LOGGER.debug(f"Retrieve device config for '{config_id}'")
                 raw = await self._send_request(context, request)
 
                 # {
@@ -1021,7 +1132,7 @@ class AsyncDabPumps:
                 context = f"statuses {serial}"
                 request = { "method": "GET", "url": DCONNECT_API_URL + f"/dumstate/{serial}" } # or f"/api/v1/dum/{serial}/state"
                 
-                _LOGGER.debug(f"Retrieve device statuses for '{serial}' via {request["method"]} {request["url"]}")
+                _LOGGER.debug(f"Retrieve device statuses for '{serial}'")
                 raw = await self._send_request(context, request)
                 
                 # {
@@ -1164,7 +1275,7 @@ class AsyncDabPumps:
             },
         }
         
-        _LOGGER.debug(f"Set device param for '{serial}:{key}' to '{value}' via {request["method"]} {request["url"]}")
+        _LOGGER.debug(f"Set device param for '{serial}:{key}' to '{value}'")
         raw = await self._send_request(context, request)
         
         # If no exception was thrown then the operation was successfull
@@ -1191,7 +1302,7 @@ class AsyncDabPumps:
                     "method": "DELETE",
                     "url": DABCS_API_URL + f"/mobile/v1/installations/{install_id}/users/{role_old}/{self._username}",
                 }
-                _LOGGER.debug(f"Del install role via {request["method"]} {request["url"]}")
+                _LOGGER.debug(f"Del install role")
                 raw = await self._send_request(context, request)
 
                 context = f"add {install_id}:{self._username}"
@@ -1202,7 +1313,7 @@ class AsyncDabPumps:
                       'Content-Length': '0',
                     },
                 }
-                _LOGGER.debug(f"Add install role via {request["method"]} {request["url"]}")
+                _LOGGER.debug(f"Add install role")
                 raw = await self._send_request(context, request)
 
             case DabPumpsFetch.DCONNECT: 
@@ -1212,7 +1323,7 @@ class AsyncDabPumps:
                     "method": "GET",
                     "url": DCONNECT_API_URL + f"/api/v1/user", # or DCONNECT_API_URL + f"/user/{username}/search"
                 }
-                _LOGGER.debug(f"Get user via {request["method"]} {request["url"]}")
+                _LOGGER.debug(f"Get user")
                 raw = await self._send_request(context, request)
 
                 user_id = raw.get('user_id') or ""
@@ -1223,7 +1334,7 @@ class AsyncDabPumps:
                     "method": "GET",
                     "url": DCONNECT_API_URL + f"/installation/{install_id}/remove/{role_old}/{user_id}",
                 }
-                _LOGGER.debug(f"Del install role via {request["method"]} {request["url"]}")
+                _LOGGER.debug(f"Del install role")
                 raw = await self._send_request(context, request)
 
                 context = f"add {install_id}:{self._username}"
@@ -1231,7 +1342,7 @@ class AsyncDabPumps:
                     "method": "GET",
                     "url": DCONNECT_API_URL + f"/installation/{install_id}/add/{role_new}/{user_id}",
                 }
-                _LOGGER.debug(f"Add install role via {request["method"]} {request["url"]}")
+                _LOGGER.debug(f"Add install role")
                 raw = await self._send_request(context, request)
         
         # If no exception was thrown then the operation was successfull
@@ -1251,7 +1362,7 @@ class AsyncDabPumps:
             },
         }
         
-        _LOGGER.debug(f"Retrieve language info via {request["method"]} {request["url"]}")
+        _LOGGER.debug(f"Retrieve language info")
         raw = await self._send_request(context, request)
 
         # Process the resulting raw data
@@ -1453,7 +1564,7 @@ class AsyncDabPumps:
                 "headers": rsp.headers,
                 "elapsed": (utcnow() - timestamp).total_seconds(),
             }
-            if rsp.is_success and rsp.headers.get('content-type','').startswith('application/json'):
+            if rsp.headers.get('content-type','').startswith('application/json'):
                 response["json"] = rsp.json()
             else:
                 response["text"] = rsp.text
@@ -1473,7 +1584,10 @@ class AsyncDabPumps:
         
         # Check response
         if not response["success"]:
-            error = f"Request failed: {response["status"]} while trying to reach {request["url"]}"
+            if "json" in response and "error" in response["json"]:
+                error = f"Request failed: '{response["json"]["error"]}' while trying to reach {request["url"]}"
+            else:
+                error = f"Request failed: '{response["status"]}' while trying to reach {request["url"]}"
             _LOGGER.debug(error)
 
             # Force a logout to so next login will be a token refresh or a real login, not a token reuse
@@ -1493,7 +1607,7 @@ class AsyncDabPumps:
             # if the result structure contains a 'res' value, then check it
             json = response["json"]
             res = json.get('res')
-            if res and res != 'OK' and res != 'SCHEDULED':
+            if res and res not in ['OK', 'SCHEDULED']:
                 # BAD RESPONSE: { "res": "ERROR", "code": "FORBIDDEN", "msg": "Forbidden operation", "where": "ROUTE RULE" }
                 code = json.get('code') or ''
                 msg = json.get('msg') or ''
