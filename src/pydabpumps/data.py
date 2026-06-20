@@ -74,6 +74,7 @@ class DabPumpsParamType(StrEnum):
     ENUM = "enum"
     MEASURE = "measure"
     LABEL = "label"
+    SETTINGS = "settings"
 
 
 @dataclass

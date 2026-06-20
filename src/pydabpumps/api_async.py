@@ -906,8 +906,8 @@ class AsyncDabPumps:
         for dum_idx, dum in enumerate(ins_dums):
             dum_serial = dum.get('serial') or ''
             dum_name = dum.get('name') or dum.get('ProductName') or f"device {dum_idx}"
-            dum_product = dum.get('ProductName') or dum.get('distro_embedded') or f"device {dum_idx}"
-            dum_version = dum.get('configuration_name') or dum.get('distro_embedded') or ''
+            dum_product = dum.get('ProductName') or dum.get('distro_embedded') or dum.get('distro') or f"device {dum_idx}"
+            dum_version = dum.get('configuration_name') or dum.get('distro_embedded')or dum.get('distro') or ''
             dum_config = dum.get('configuration_id') or ''
 
             if not dum_serial: 
@@ -1486,6 +1486,9 @@ class AsyncDabPumps:
                 # Convert to string; no translation
                 value = str(code)
 
+            case DabPumpsParamType.SETTINGS:
+                value = str(code)
+
             case _:
                 _LOGGER.warning(f"Encountered an unknown params type '{params.type}' for '{serial}:{params.key}'. Please contact the integration developer to have this resolved.")
                 value = None
@@ -1525,6 +1528,9 @@ class AsyncDabPumps:
                 # Convert to string
                 code = str(value)
 
+            case DabPumpsParamType.SETTINGS:
+                code = str(value)
+            
             case _:
                 _LOGGER.warning(f"Encountered an unknown params type '{params.type}' for '{serial}:{params.key}'. Please contact the integration developer to have this resolved.")
                 code = None

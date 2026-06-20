@@ -69,7 +69,7 @@ def main():
             for k,v in asdict(device).items():
                 logger.info(f"    {k}: {v}")
 
-            config = api.config_map[device.config_id]                     
+            config = api.config_map.get(device.config_id)
             logger.info("")
             logger.info(f"config: {config.description} ({config.id})")
             logger.info(f"    meta_params: {len(config.meta_params)}")             
