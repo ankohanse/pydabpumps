@@ -1243,16 +1243,15 @@ class DabPumps:
 
         # Search for specific statuses
         for attr,keys in DEVICE_ATTR_EXTRA.items():
-            for key in keys:
 
-                # Try to find a status for this key and device
-                status = next( (status for status in self._status_actual_map.values() if status.serial==serial and status.key==key), None)
-                
-                if status is not None and status.value is not None:
-                    # Found it. Update the device attribute (workaround via dict because it is a namedtuple)
-                    if getattr(device, attr) != status.value:
-                        _LOGGER.debug(f"Found extra device attribute {serial} {attr} = {status.value}")
-                        setattr(device, attr, status.value)
+            # Try to find a status for this device and these keys
+            status = next( (status for status in self._status_actual_map.values() if status.serial==serial and status.key in keys), None)
+            
+            if status is not None and status.value is not None:
+                # Found it. Update the device attribute (workaround via dict because it is a namedtuple)
+                if getattr(device, attr) != status.value:
+                    _LOGGER.debug(f"Found extra device attribute {serial} {attr} = {status.value}")
+                    setattr(device, attr, status.value)
 
         self._device_detail_ts = datetime.now()
 
