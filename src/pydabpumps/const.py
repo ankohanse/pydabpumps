@@ -36,18 +36,7 @@ STATUS_UPDATE_HOLD = 30 # seconds
 # Extra device attributes that are not in install info, but retrieved from statuses
 DEVICE_ATTR_EXTRA = {
     "mac_address": ['MacWlan'],
-    "sw_version": ['LvFwVersion', 'ucVersion']
-}
-
-# Known device statuses that normally don't hold a value until an action occurs
-DEVICE_STATUS_STATIC = {
-    "PowerShowerCountdown",         # ESybox pumps
-    "SleepModeCountdown",           # ESybox pumps
-    "Setpoint RPM",                 # EvoPlus pumps
-    "Regulation Setpoint",          # EvoPlus pumps
-    "Regulation T Max",             # EvoPlus pumps
-    "Economy Setpoint Reduction",   # EvoPlus pumps
-    "Reboot",                       # DConnext box 1
+    "sw_version": ['LvFwVersion', 'LvVersion', 'ucVersion']
 }
 
 HTTPX_REQUEST_TIMEOUT = 20.0

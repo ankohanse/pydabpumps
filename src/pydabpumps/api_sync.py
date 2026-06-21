@@ -37,7 +37,6 @@ from .const import (
     DABCS_ACCESS_TOKEN_VALID,
     DABCS_REFRESH_TOKEN_VALID,
     DEVICE_ATTR_EXTRA,
-    DEVICE_STATUS_STATIC,
     H2D_APP_REDIRECT_URI,
     H2D_APP_CLIENT_ID,
     H2D_APP_CLIENT_SECRET,
@@ -958,8 +957,8 @@ class DabPumps:
         for dum_idx, dum in enumerate(ins_dums):
             dum_serial = dum.get('serial') or ''
             dum_name = dum.get('name') or dum.get('ProductName') or f"device {dum_idx}"
-            dum_product = dum.get('ProductName') or dum.get('distro_embedded') or f"device {dum_idx}"
-            dum_version = dum.get('configuration_name') or dum.get('distro_embedded') or ''
+            dum_product = dum.get('ProductName') or dum.get('distro_embedded') or dum.get('distro')  or f"device {dum_idx}"
+            dum_version = dum.get('configuration_name') or dum.get('distro_embedded') or dum.get('distro')  or dum.get('distro') or ''
             dum_config = dum.get('configuration_id') or ''
 
             if not dum_serial: 
@@ -1212,15 +1211,14 @@ class DabPumps:
 
         # Search for specific statuses
         for attr,keys in DEVICE_ATTR_EXTRA.items():
-            for key in keys:
-                # Try to find a status for this key
-                status = device_state.status.get(key)
-                
-                if status is not None and status.value is not None:
-                    # Found it. Update the device attribute (workaround via dict because it is a namedtuple)
-                    if getattr(device, attr) != status.value:
-                        _LOGGER.debug(f"Found extra device attribute {device.serial} {attr} = {status.value}")
-                        setattr(device, attr, status.value)
+            # Try to find a status for this device and these keys
+            status = next( (status for k,status in device_state.status.items() if k in keys), None)
+            
+            if status is not None and status.value is not None:
+                # Found it. Update the device attribute (workaround via dict because it is a namedtuple)
+                if getattr(device, attr) != status.value:
+                    _LOGGER.debug(f"Found extra device attribute {serial} {attr} = {status.value}")
+                    setattr(device, attr, status.value)
 
 
     def change_device_status(self, serial: str, key: str, code: str|None=None, value: Any|None=None):
@@ -1472,8 +1470,11 @@ class DabPumps:
                 # Convert to string; no translation
                 value = str(code)
 
+            case DabPumpsParamType.SETTINGS:
+                value = str(code)
+            
             case _:
-                _LOGGER.warning(f"Encountered an unknown params type '{params.type}' for '{serial}:{params.key}'. Please contact the integration developer to have this resolved.")
+                _LOGGER.warning(f"Encountered an unknown params type '{params.type}' for '{serial}:{key}'. Please contact the integration developer to have this resolved.")
                 value = None
 
         return (value, params.unit)
@@ -1509,8 +1510,11 @@ class DabPumps:
                 # Convert to string
                 code = str(value)
 
+            case DabPumpsParamType.SETTINGS:
+                code = str(value)
+            
             case _:
-                _LOGGER.warning(f"Encountered an unknown params type '{params.type}' for '{serial}:{params.key}'. Please contact the integration developer to have this resolved.")
+                _LOGGER.warning(f"Encountered an unknown params type '{params.type}' for '{serial}:{key}'. Please contact the integration developer to have this resolved.")
                 code = None
         
         return code
