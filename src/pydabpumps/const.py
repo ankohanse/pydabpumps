@@ -30,6 +30,12 @@ DCONNECT_APP_CLIENT_ID = 'DWT-Dconnect-Mobile'
 DCONNECT_APP_CLIENT_SECRET = 'ce2713d8-4974-4e0c-a92e-8b942dffd561'
 DCONNECT_APP_USER_AGENT = 'Dalvik/2.1.0 (Linux; U; Android 9; SM-G935F Build/PI) DConnect/2.13.1'
 
+# WAMP is used for push messages from the H2D servers
+WAMP_URL = 'wss://dconnect.dabpumps.com/wsapp'
+WAMP_REALM = 'realm1'
+WAMP_AUTH_METHODS = ['ticket']
+WAMP_AUTH_ID = 'iopapp'
+
 # Period to prevent status updates when value was recently updated
 STATUS_UPDATE_HOLD = 30 # seconds
 

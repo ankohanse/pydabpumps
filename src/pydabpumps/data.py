@@ -91,6 +91,7 @@ class DabPumpsInstall:
 
 @dataclass
 class DabPumpsDevice:
+    id: str
     serial: str
     name: str
     vendor: str
@@ -160,7 +161,6 @@ class DabPumpsDeviceState:
 
             if item_status and isinstance(item_status, dict):
                 self.status[item_key] = DabPumpsStatus(**item_status)
-
 
 
 @dataclass

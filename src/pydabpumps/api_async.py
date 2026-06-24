@@ -78,7 +78,7 @@ _LOGGER = logging.getLogger(__name__)
 # DabPumps api to detect device and get device info, fetch the actual data from the device, and parse it
 class AsyncDabPumps:
     
-    def __init__(self, username, password, client:httpx.AsyncClient=None, login_info:DabPumpsLoginInfo=None, access_token_info:DabPumpsAccessTokenInfo=None, refresh_token_info:DabPumpsRefreshTokenInfo=None, session_info:DabPumpsSessionInfo=None):
+    def __init__(self, username, password, client:httpx.AsyncClient=None, login_info:DabPumpsLoginInfo=None, access_token_info:DabPumpsAccessTokenInfo=None, refresh_token_info:DabPumpsRefreshTokenInfo=None):
         # Configuration
         self._username: str = username
         self._password: str = password
@@ -88,7 +88,7 @@ class AsyncDabPumps:
         self._login_info: DabPumpsLoginInfo = login_info or DabPumpsLoginInfo()
         self._access_token_info: DabPumpsAccessTokenInfo = access_token_info or DabPumpsAccessTokenInfo()
         self._refresh_token_info: DabPumpsRefreshTokenInfo = refresh_token_info or DabPumpsRefreshTokenInfo()
-        self._session_info: DabPumpsSessionInfo = session_info or DabPumpsSessionInfo()
+        self._session_info: DabPumpsSessionInfo = DabPumpsSessionInfo()
 
         # Retrieved data
         self._install_map: dict[str, DabPumpsInstall] = {}              # install_id => install
@@ -139,10 +139,6 @@ class AsyncDabPumps:
     @property
     def refresh_token_info(self) -> DabPumpsRefreshTokenInfo:
         return self._refresh_token_info
-    
-    @property
-    def session_info(self) -> DabPumpsSessionInfo:
-        return self._session_info
     
     @property
     def install_map(self) -> dict[str, DabPumpsInstall]:
@@ -198,9 +194,6 @@ class AsyncDabPumps:
         async with self._login_lock:
             await self._login(test_method=test_method)
 
-        # Start a new session if needed
-        await self._start_session()
-
 
     async def _login(self, test_method:DabPumpsLogin=None):
         """Login to DAB Pumps by trying each of the possible login methods"""        
@@ -252,8 +245,9 @@ class AsyncDabPumps:
                 error = ex
 
                 # Clear any previous login cookies and tokens before trying the next method
-                if method not in [DabPumpsLogin.ACCESS_TOKEN]:
-                    await self._stop_session()
+                # AJH needed?
+                #if method not in [DabPumpsLogin.ACCESS_TOKEN]:
+                #    await self._stop_user_session()
 
                 await self._logout(context="login", method=method)
 
@@ -614,7 +608,7 @@ class AsyncDabPumps:
         # Cookie for access_token is already set by the last call
         # No need to remember access-token, we never need to pass it as header with this login method
         self._access_token_info = DabPumpsAccessTokenInfo(
-            token = None,
+            token = access_token,
             expiry = datetime.max,  # Always let access-token expiry check succeed,
         )
         self._refresh_token_info = DabPumpsRefreshTokenInfo(
@@ -632,7 +626,7 @@ class AsyncDabPumps:
         return True
     
 
-    async def _start_session(self):
+    async def _start_user_session(self) -> bool:
         """
         Open/Start a new session. Needed to open a direct socket connection
         """
@@ -640,22 +634,22 @@ class AsyncDabPumps:
             # Already have the session key and websocket token
             return True
 
+        # User session works with all login methods, except DCONNECT_WEB
+        if self._login_info.login_method in [DabPumpsLogin.DCONNECT_WEB]:
+            return False
+        
         # Step 1: start session
-        match self._login_info.fetch_method:
-            case DabPumpsFetch.DABCS:    url = DABCS_API_URL + '/mobile/v1/user/session?destroyothers=1'
-            case DabPumpsFetch.DCONNECT: return False   # No support for session / websocket / cloud push
-
-        context = f"session start {self._username.lower()}"
+        context = f"user session start {self._username.lower()}"
         request = {
             "method": "POST",
-            "url": url,
+            "url": DABCS_API_URL + '/mobile/v1/user/session?destroyothers=1',
             "headers": {
                 "x-dabcs-auth": self._session_info.dabcs_auth,
-                "x-dabcs-device": self.session_info.dabcs_device,
+                "x-dabcs-device": self._session_info.dabcs_device,
             },
         }
 
-        _LOGGER.debug(f"Start session for '{self._username}'")
+        _LOGGER.debug(f"User session start for '{self._username}'")
         raw = await self._send_request(context, request)  
 
         # Process the resulting raw data
@@ -669,22 +663,18 @@ class AsyncDabPumps:
             return False
 
         # Step 2: get wstoken
-        match self._login_info.fetch_method:
-            case DabPumpsFetch.DABCS:    url = DABCS_API_URL + '/mobile/v1/user/wstoken'
-            case DabPumpsFetch.DCONNECT: url = DABCS_API_URL + '/mobile/v1/user/wstoken'
-
-        context = f"session wstoken {self._username.lower()}"
+        context = f"user session wstoken {self._username.lower()}"
         request = {
             "method": "POST",
-            "url": url,
+            "url": DABCS_API_URL + '/mobile/v1/user/wstoken',
             "headers": {
                 "x-dabcs-auth": self._session_info.dabcs_auth,
-                "x-dabcs-device": self.session_info.dabcs_device,
-                "x-session-token": self.session_info.key
+                "x-dabcs-device": self._session_info.dabcs_device,
+                "x-session-token": self._session_info.key,
             }
         }
 
-        _LOGGER.debug(f"Retrieve session wstoken")
+        _LOGGER.debug(f"User session get wstoken")
         raw = await self._send_request(context, request)  
 
         # Process the resulting raw data
@@ -700,7 +690,7 @@ class AsyncDabPumps:
         return True
 
         
-    async def _stop_session(self):
+    async def _stop_user_session(self) -> bool:
         """
         Close/Stop session.
         """
@@ -708,26 +698,32 @@ class AsyncDabPumps:
             # No current session
             return True
 
-        match self._login_info.fetch_method:
-            case DabPumpsFetch.DABCS:    url = DABCS_API_URL + '/mobile/v1/user/session'
-            case DabPumpsFetch.DCONNECT: return False   # No support for session / websocket / cloud push
-
-        context = f"session start {self._username.lower()}"
-        request = {
-            "method": "DELETE",
-            "url": url,
-            "headers": {
-                "x-dabcs-auth": self._session_info.dabcs_auth,
-                "x-dabcs-device": self.session_info.dabcs_device,
-                "x-session-token": self.session_info.key
+        # User session works with all login methods, except DCONNECT_WEB
+        if self._login_info.login_method in [DabPumpsLogin.DCONNECT_WEB]:
+            return False
+        
+        try:
+            context = f"user session stop {self._username.lower()}"
+            request = {
+                "method": "DELETE",
+                "url": DABCS_API_URL + '/mobile/v1/user/session',
+                "headers": {
+                    "x-dabcs-auth": self._session_info.dabcs_auth,
+                    "x-dabcs-device": self._session_info.dabcs_device,
+                    "x-session-token": self._session_info.key
+                }
             }
-        }
 
-        _LOGGER.debug(f"Stop session for '{self._username}'")
-        raw = await self._send_request(context, request)  
+            _LOGGER.debug(f"User session stop for '{self._username}'")
+            raw = await self._send_request(context, request)  
 
-        self._session_info.key = None
-        self._session_info.wstoken = None
+        except:
+            pass    # Ignore any errors
+
+        finally:
+            self._session_info.key = None
+            self._session_info.wstoken = None
+
         return True
 
 
@@ -737,7 +733,6 @@ class AsyncDabPumps:
         # Only one thread at a time can check token cookie and do subsequent login or logout if needed.
         # Once one thread is done, the next thread can then check the (new) token cookie.
         async with self._login_lock:
-            await self._stop_session()
             await self._logout(context="", method=None)
 
 
@@ -952,12 +947,15 @@ class AsyncDabPumps:
         ins_dums = raw.get('dums') or []
 
         for dum_idx, dum in enumerate(ins_dums):
+            dum_id = dum.get('dum_id') or ''
             dum_serial = dum.get('serial') or ''
             dum_name = dum.get('name') or dum.get('ProductName') or f"device {dum_idx}"
             dum_product = dum.get('ProductName') or dum.get('distro_embedded') or dum.get('distro')  or f"device {dum_idx}"
             dum_version = dum.get('configuration_name') or dum.get('distro_embedded') or dum.get('distro')  or dum.get('distro') or ''
             dum_config = dum.get('configuration_id') or ''
 
+            if not dum_id: 
+                raise DabPumpsDataError(f"Could not find installation attribute 'dum_id'")
             if not dum_serial: 
                 raise DabPumpsDataError(f"Could not find installation attribute 'serial'")
             if not dum_config: 
@@ -966,6 +964,7 @@ class AsyncDabPumps:
             device = DabPumpsDevice(
                 vendor = 'DAB Pumps',
                 name = dum_name,
+                id = dum_id,
                 serial = dum_serial,
                 product = dum_product,
                 hw_version = dum_version,
@@ -1101,7 +1100,8 @@ class AsyncDabPumps:
     async def _fetch_device_state(self, serial: str, raw_install_data: dict|None = None):
         """Fetch the statuses for a DAB Pumps device"""
 
-        statusts = ""
+        statusts = None
+        lastrecv = None
         values = {}
 
         match self._login_info.fetch_method:
@@ -1145,10 +1145,38 @@ class AsyncDabPumps:
                 values = json.loads(status)
 
         # Process the resulting raw data
-        dt1 = datetime.fromisoformat(statusts) if statusts else utcnow()
-        dt2 = datetime.fromisoformat(lastrecv) if lastrecv else utcnow()
-        status_ts = max(dt1, dt2)
-        status = {}
+        state = self._parse_device_state(serial, statusts, lastrecv, values)
+
+        if len(state.status) == 0:
+            raise DabPumpsDataError(f"No statuses found for '{serial}'")
+        
+        _LOGGER.debug(f"Statuses found for '{serial}' with {len(state.status)} values")
+
+        # Merge with statuses from other devices
+        self._device_state_map[serial] = state
+        
+
+    def _parse_device_state(self, serial: str, statusts: Any, lastrecv: Any, values: dict) -> DabPumpsDeviceState:
+        """
+        Heper function to parse received data into a device state.
+        Called when data is retrieved via a poll request or via a push from the remote DAB Pumps servers.
+        """
+
+        if isinstance(statusts, (int,float)):
+            status_ts = datetime.fromtimestamp(statusts/1000.0, tz=timezone.utc)
+        elif isinstance(statusts, str):
+            status_ts = datetime.fromisoformat(statusts)
+        else:
+            status_ts = utcnow()
+
+        if isinstance(lastrecv, (int,float)):
+            lastrecv_ts = datetime.fromtimestamp(lastrecv/1000.0, tz=timezone.utc)
+        elif isinstance(lastrecv, str):
+            lastrecv_ts = datetime.fromisoformat(lastrecv)
+        else:
+            lastrecv_ts = utcmin()
+
+        status: dict[str, DabPumpsStatus] = {}
 
         for item_key, item_code in values.items():
             try:
@@ -1159,7 +1187,7 @@ class AsyncDabPumps:
                 update_ts = self.get_status_update(serial, item_key)
 
                 if status_old is not None and update_ts is not None and \
-                   (utcnow() - update_ts).total_seconds() < STATUS_UPDATE_HOLD:
+                    (utcnow() - update_ts).total_seconds() < STATUS_UPDATE_HOLD:
 
                     _LOGGER.info(f"Skip refresh of recently updated status ({serial}.{item_key})")
                     status[item_key] = status_old
@@ -1181,17 +1209,11 @@ class AsyncDabPumps:
             except Exception as e:
                 _LOGGER.warning(f"Exception while processing status for '{serial}:{item_key}': {e}")
 
-        if len(status) == 0:
-            raise DabPumpsDataError(f"No statuses found for '{serial}'")
-        
-        _LOGGER.debug(f"Statuses found for '{serial}' with {len(status)} values")
-
-        # Merge with statuses from other devices
-        self._device_state_map[serial] = DabPumpsDeviceState(
-            status_ts = status_ts,
+        return DabPumpsDeviceState(
+            status_ts = max(status_ts, lastrecv_ts),
             status = status,
         )
-        
+    
         
     async def _derive_device_details(self, serial: str):
         """

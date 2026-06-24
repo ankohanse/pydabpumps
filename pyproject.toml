@@ -16,6 +16,7 @@ dependencies = [
   'PyJWT',
   'httpx<1.0.0',
   'autobahn<26.0.0',
+  'autobahn-autoreconnect<1.0.0',
 ]
 
 [project.optional-dependencies]

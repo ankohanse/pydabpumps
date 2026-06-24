@@ -4,6 +4,9 @@ from .api_async import (
 from .api_sync import (
     DabPumps, 
 )
+from .api_push_async import (
+    AsyncDabPumpsPush,
+)
 from .data import (
     DabPumpsConnectError, 
     DabPumpsAuthError, 
