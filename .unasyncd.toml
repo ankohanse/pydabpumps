@@ -9,15 +9,17 @@ exclude = [
 ]
 
 [tool.unasyncd.files]
-    "src/pydabpumps/api_async.py" = "src/pydabpumps/api_sync.py"
+    "src/pydabpumps/api_base_async.py" = "src/pydabpumps/api_base_sync.py"
     "tests/test_api_async.py" = "tests/test_api_sync.py"
 
 [tool.unasyncd.add_replacements]
     "AsyncDabPumps" = "DabPumps"
+    "AsyncDabPumpsBase" = "DabPumpsBase"
     "httpx.AsyncClient" = "httpx.Client"
     "AsyncTaskHelper" = "TaskHelper"
     "aclose" = "close"
     "CALL_CONTEXT_ASYNC" = "CALL_CONTEXT_SYNC"
     "pytest_asyncio" = "pytest"
+    "TEST_FRAMEWORK_ASYNC" = "TEST_FRAMEWORK_SYNC"
 
 

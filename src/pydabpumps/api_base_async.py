@@ -1,4 +1,4 @@
-"""api.py: DabPumps API for DAB Pumps integration."""
+"""api_base.py: DabPumps API for DAB Pumps integration."""
 
 import base64
 import copy
@@ -76,7 +76,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 # DabPumps api to detect device and get device info, fetch the actual data from the device, and parse it
-class AsyncDabPumps:
+class AsyncDabPumpsBase:
     
     def __init__(self, username, password, client:httpx.AsyncClient=None, login_info:DabPumpsLoginInfo=None, access_token_info:DabPumpsAccessTokenInfo=None, refresh_token_info:DabPumpsRefreshTokenInfo=None):
         # Configuration
@@ -375,6 +375,9 @@ class AsyncDabPumps:
                 'scope': 'openid profile email phone',
                 'redirect_uri': H2D_APP_REDIRECT_URI,
             },
+            "flags": {
+                'redirects': False,
+            }
         }
 
         _LOGGER.debug(f"Try login with H2D; retrieve auth page")
@@ -434,6 +437,9 @@ class AsyncDabPumps:
                 'client_id': openid_client_id,
                 'redirect_uri': H2D_APP_REDIRECT_URI,
             },
+            "flags": {
+                'redirects': False,
+            }
         }
         
         _LOGGER.debug(f"Try login with H2D; retrieve tokens")
@@ -635,8 +641,8 @@ class AsyncDabPumps:
             return True
 
         # User session works with all login methods, except DCONNECT_WEB
-        if self._login_info.login_method in [DabPumpsLogin.DCONNECT_WEB]:
-            return False
+        if self._login_info.login_method in [DabPumpsLogin.DABLIVE_APP, DabPumpsLogin.DCONNECT_WEB]:
+            raise DabPumpsError(f"Subscribe to push data only is allowed in combination with H2D login method")
         
         # Step 1: start session
         context = f"user session start {self._username.lower()}"
@@ -1437,7 +1443,7 @@ class AsyncDabPumps:
         """
         Resolve timestamp of last update of the status (if any changes were made)
         """
-        update_id = AsyncDabPumps.create_id(serial, key)
+        update_id = AsyncDabPumpsBase.create_id(serial, key)
         update_ts = self._status_update_map.get(update_id)
 
         return update_ts
@@ -1446,7 +1452,7 @@ class AsyncDabPumps:
         """
         Set/reset timestamp of last update of the status (if any changes were made)
         """
-        update_id = AsyncDabPumps.create_id(serial, key)
+        update_id = AsyncDabPumpsBase.create_id(serial, key)
         if ts is not None:
             self._status_update_map[update_id] = ts
         else:

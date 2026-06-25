@@ -9,11 +9,14 @@ from datetime import datetime
 from pydabpumps import (
     AsyncDabPumps,
     DabPumpsStatusCode,
+    DabPumpsLogin,
+    DabPumpsDevice,
+    DabPumpsDeviceState,
 )
 
 
 # Setup logging to StdOut
-logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
+logging.basicConfig(stream=sys.stdout, level=logging.DEBUG, format='%(asctime)s: %(message)s', datefmt='%H:%M:%S')
 logger = logging.getLogger(__name__)
 
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -24,7 +27,6 @@ TEST_USERNAME = "fill in your DConnect username here"
 TEST_PASSWORD = "fill in your DConnect password here"
 #
 # Comment out the line below if username and password are set above
-from pydabpumps.data import DabPumpsStatusCode
 from tests import TEST_USERNAME, TEST_PASSWORD
 
 
@@ -82,37 +84,53 @@ async def main():
             #for k,v in config.meta_params.items():
             #    logger.info(f"        {k}: {v}")
 
-        # Once the calls above have been perfomed, the calls below can be repeated periodically.
+
+        async def show_device_state(serial: str, device_state: DabPumpsDeviceState = None):
+            # Helper function to show updated or all device statuses
+            device = api.device_map.get(serial)
+            device_state = device_state or api.device_state_map.get(serial)
+
+            logger.info("")
+            logger.info(f"State for {device.name}: {len(device_state.status)} statuses")
+
+            for key,status in device_state.status.items():
+                if status.code in [DabPumpsStatusCode.HIDDEN]:
+                    continue
+                
+                params = api.get_status_metadata(serial, key)
+                if params is None:
+                    continue
+
+                value_with_unit = f"{status.value} {params.unit}" if params.unit is not None else status.value
+                
+                if (status.value != status.code):
+                    # Display real-life value and original encoded value
+                    logger.info(f"    {params.name}: {value_with_unit} ('{status.code}')")
+                else:
+                    # Display real-life value, original encoded value is the same
+                    logger.info(f"    {params.name}: {value_with_unit}")                
+
+        # Show initial device states and subscribe to state updates
+        for serial in api.device_map.keys():
+            await show_device_state(device.serial)
+            await api.on_device_state(serial, show_device_state)
+
+        # Keep the application alive
         for t in range(60):
             # Regularly repeat the login call to make sure the access-token is renewed when needed.
+            # This will also reconnect any push session is it has become disconnected.
             await api.login()
 
-            # Retrieve fresh statuses for all devices in this install
-            await api.fetch_install_statuses(install_id)
+            # In addition to waiting for push statuses to arrive, you can still
+            # poll for fresh statuses for all devices in this install
+            # await api.fetch_install_statuses(install_id)
 
-            for device in api.device_map.values():
-                device_state = api.device_state_map[device.serial]
-
-                logger.info("")
-                logger.info(f"statuses for {device.name}: {len(device_state.status)}")
-
-                for key,status in device_state.status.items():
-                    if status.code in [DabPumpsStatusCode.HIDDEN]:
-                        continue
-                    
-                    params = api.get_status_metadata(device.serial, key)
-                    value_with_unit = f"{status.value} {params.unit}" if params.unit is not None else status.value
-                    
-                    if (status.value != status.code):
-                        # Display real-life value and original encoded value
-                        logger.info(f"    {params.name}: {value_with_unit} ('{status.code}')")
-                    else:
-                        # Display real-life value, original encoded value is the same
-                        logger.info(f"    {params.name}: {value_with_unit}")
+            # for serial in api.device_map.keys():
+            #     await show_device_state(device.serial)
 
             # Wait one minute and retrieve install statuses again
             logger.info("")
-            logger.info(f"wait ({datetime.now().strftime("%H:%M")})")
+            logger.info(f"wait")
             await asyncio.sleep(60)
 
     except Exception as e:

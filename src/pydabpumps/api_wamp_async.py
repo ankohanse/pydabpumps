@@ -1,5 +1,5 @@
 """
-api_push.py: DabPumps API for DAB Pumps integration.
+api.py: DabPumps API for DAB Pumps integration.
 
 The Api can either be used to retrieve data from the DAB Pumps servers via polling,
 but also provides functionality to subscribe to push data.
@@ -31,11 +31,10 @@ from typing import Any
 from urllib.parse import urlparse, parse_qs
 
 
-from .api_async import(
-    AsyncDabPumps,
+from .api_base_async import(
+    AsyncDabPumpsBase,
 )
 from .const import (
-    STATUS_UPDATE_HOLD,
     WAMP_URL,
     WAMP_REALM,
     WAMP_AUTH_METHODS,
@@ -74,7 +73,7 @@ class WampSubscriptionDetails:
     callback: Any = None
 
 
-class AsyncDabPumpsPush(AsyncDabPumps):
+class AsyncDabPumps(AsyncDabPumpsBase):
     
     def __init__(self, username, password, client:httpx.AsyncClient=None, login_info:DabPumpsLoginInfo=None, access_token_info:DabPumpsAccessTokenInfo=None, refresh_token_info:DabPumpsRefreshTokenInfo=None):
         super().__init__(
@@ -126,7 +125,8 @@ class AsyncDabPumpsPush(AsyncDabPumps):
         """
         Subscribe to status changes for a device.
 
-        Callback must function in form of fn(serial: str, state: DabPumpsDeviceState)
+        Callback must function in form of:
+            async def fn(serial: str, state: DabPumpsDeviceState)
 
         The passed state only contains the updated statuses. 
         To get all statuses ignore the state param and instead call:
@@ -205,7 +205,7 @@ class AsyncDabPumpsPush(AsyncDabPumps):
         """
         subs = [sub for sub in self._wamp_subscription_map.values() if sub.response is not None]
         if subs:
-            _LOGGER.debug(f"Wamp subscriptions cancelled")
+            _LOGGER.debug(f"Wamp subscribe cancelled")
             for sub in subs:
                 sub.response = None
 
@@ -216,7 +216,7 @@ class AsyncDabPumpsPush(AsyncDabPumps):
         """
         subs = [sub for sub in self._wamp_subscription_map.values() if sub.response is None]
         if subs:
-            _LOGGER.debug(f"Wamp subscriptions resubmit")
+            _LOGGER.debug(f"Wamp subscribe resubmit")
             for sub in subs:
                 await self._wamp_subscribe_request(sub.context, sub.request, sub.callback)
         
@@ -316,7 +316,12 @@ class AsyncDabPumpsPush(AsyncDabPumps):
 
                 # Notify our parent via the callback that was provided earlier
                 if info.callback is not None:
-                    info.callback(serial, state_new)
+                    try:
+                        await info.callback(serial, state_new)
+
+                    except Exception as e:
+                        _LOGGER.debug(f"Exception while calling callback: {str(e)}")
+
 
             case _:
                 _LOGGER.warning(f"Encountered an unknown subscription type '{info.type}'. Please contact the integration developer to have this resolved.")
@@ -329,7 +334,7 @@ class AsyncDabPumpsWampSession(ApplicationSession):
     DabPumps socket push session via Wamp
     """
     
-    def __init__(self, config: ComponentConfig, api_instance: AsyncDabPumpsPush):
+    def __init__(self, config: ComponentConfig, api_instance: AsyncDabPumps):
         """
         Create an instance of the Wamp ApplicationSession
         """

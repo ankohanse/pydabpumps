@@ -1,11 +1,8 @@
-from .api_async import (
-    AsyncDabPumps, 
+from .api_wamp_async import (
+    AsyncDabPumps,
 )
-from .api_sync import (
+from .api_wamp_sync import (
     DabPumps, 
-)
-from .api_push_async import (
-    AsyncDabPumpsPush,
 )
 from .data import (
     DabPumpsConnectError, 
@@ -34,9 +31,6 @@ from .data import (
 )
 
 # for unit tests
-from .api_async import (
-    DabPumpsLogin,
-)
 from .const import (
     utcnow,
     utcmin,
