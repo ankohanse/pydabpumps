@@ -10,6 +10,7 @@ from pydabpumps import (
     AsyncDabPumps,
     DabPumps,
     DabPumpsAuthError,
+    DabPumpsConnectError,
     DabPumpsError, 
     DabPumpsInstall,
     DabPumpsDevice,
@@ -31,6 +32,7 @@ from pydabpumps import (
 )
 
 from . import TEST_USERNAME, TEST_PASSWORD
+from . import TEST_FRAMEWORK_ASYNC, TEST_FRAMEWORK_SYNC
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,6 +43,7 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 class TestContext:
     def __init__(self):
         self.api = None
+        self.framework = TEST_FRAMEWORK_ASYNC
 
     async def cleanup(self):
         if self.api:
@@ -103,12 +106,6 @@ async def test_login(name, method, usr, pwd, exp_except, request):
             assert context.api.refresh_token_info is not None
             assert context.api.refresh_token_info.token is not None
             assert context.api.refresh_token_info.expiry > utcmin()
-
-        if context.api.login_info.fetch_method == DabPumpsFetch.DABCS:
-            assert context.api.session_info.dabcs_auth is not None
-            assert context.api.session_info.dabcs_device is not None            
-            assert context.api.session_info.key is not None
-            assert context.api.session_info.wstoken is not None
 
         assert context.api.install_map is not None
         assert context.api.device_map is not None
@@ -331,6 +328,99 @@ async def test_get_data(name, method, loop, exp_except, request):
 
     assert counter_fail == 0
 
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("context")
+@pytest.mark.parametrize(
+    "name, method, loop, exp_except",
+    [
+        ("ok",  None,                        0, None),
+        ("ok",  DabPumpsLogin.H2D_APP,       0, None),
+        ("ok",  DabPumpsLogin.DABLIVE_APP,   0, DabPumpsError),
+        ("ok",  DabPumpsLogin.DCONNECT_APP,  0, None),
+        ("ok",  DabPumpsLogin.DCONNECT_WEB,  0, DabPumpsError),
+        #
+        #("24h", None,                        24*60, None),    # Run 1 full day
+        #("24h", DabPumpsLogin.H2D_APP,       24*60, None),    # Run 1 full day
+        #("24h", DabPumpsLogin.DABLIVE_APP,   24*60, None),    # Run 1 full day
+        #("24h", DabPumpsLogin.DCONNECT_APP,  24*60, None),    # Run 1 full day
+        #("24h", DabPumpsLogin.DCONNECT_WEB,  24*60, None),    # Run 1 full day
+    ]
+)
+async def test_push_data(name, method, loop, exp_except, request):
+    context = request.getfixturevalue("context")
+    context.api = AsyncDabPumps(TEST_USERNAME, TEST_PASSWORD)
+    assert context.api.closed == False
+
+    # Try set diagnostics callback function
+    context.api.set_diagnostics(lambda context,item,detail,data: None)
+
+    # Login
+    await context.api.login(method)
+
+    login_method_org = context.api.login_info.login_method
+
+    # Get install list and details
+    await context.api.fetch_install_list()
+
+    install_id = next( (install_id for install_id in context.api.install_map.keys()), None)
+    await context.api.fetch_install_details(install_id)
+
+    # Register callback for device state data
+    counter_handler: int = 0
+
+    async def device_state_handler(serial: str, state: DabPumpsDeviceState):
+        nonlocal counter_handler
+        counter_handler += 1
+
+    if context.framework != 'async':
+        for device_serial in context.api.device_map.keys():
+            with pytest.raises(NotImplementedError):
+                await context.api.on_device_state(device_serial, device_state_handler)
+
+    elif exp_except is None:
+
+        for device_serial,device in context.api.device_map.items():
+            await context.api.on_device_state(device_serial, device_state_handler)
+
+        # Wait a moment for the Wamp connection to be established and the first data to be received
+        await asyncio.sleep(30)
+
+        assert context.api._session_info.dabcs_auth is not None
+        assert context.api._session_info.dabcs_device is not None            
+        assert context.api._session_info.key is not None
+        assert context.api._session_info.wstoken is not None
+        assert context.api._wamp_runner_started.is_set()
+        assert context.api._wamp_session_started.is_set()
+            
+        # Do the required iterations
+        for idx in range(0,loop+1):
+
+            # Wait for data to come in.
+            # Meanwhile keep the api alive
+            await context.api.login()
+
+            # Check that data has arrived within each iteration
+            assert counter_handler >= idx
+
+            if loop:
+                # Simulate failure to recover from
+                #if idx % 6 == 0:
+                #    await context.api._logout("simulate failure")
+                #elif idx % 3 == 0:
+                #    await context.api._logout("login force refresh", DabPumpsLogin.ACCESS_TOKEN)
+
+                if method != "Auto":
+                    context.api._login_info.login_method = method
+
+                _LOGGER.debug(f"Loop test, {idx} of {loop} (received {counter_handler} state updates")
+                await asyncio.sleep(60)
+
+    else:
+        for device_serial in context.api.device_map.keys():
+            with pytest.raises(exp_except):
+                await context.api.on_device_state(device_serial, device_state_handler)
+    
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("context")
@@ -788,6 +878,7 @@ def test_create_id(name, attr, exp_id, request):
 async def device_map():
     device_map = {
         "SERIAL": DabPumpsDevice(
+            id = 'DEVICE ID',
             serial = 'SERIAL',
             name = 'test device',
             product = 'test product',
