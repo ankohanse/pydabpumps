@@ -38,6 +38,10 @@ DCONNECT_APP_CLIENT_SECRET = 'ce2713d8-4974-4e0c-a92e-8b942dffd561'
 DCONNECT_APP_USER_AGENT = 'Dalvik/2.1.0 (Linux; U; Android 9; SM-G935F Build/PI) DConnect/2.13.1'
 DCONNECT_APP_DABCS_AUTH = "vwLbTh3HKJdjHRHzdEHen43PyffAc9gK"
 
+DCONNECT_WEB_CLIENT_ID =  'DWT-Dconnect'
+DCONNECT_WEB_CLIENT_SECRET = None
+DCONNECT_WEB_REDIRECT_URI = 'https://dconnect.dabpumps.com/sso?cameFrom=/dashboard&auth_callback=1'
+
 # WAMP is used for push messages from the H2D servers
 WAMP_URL = 'wss://dconnect.dabpumps.com/wsapp'
 WAMP_REALM = 'realm1'

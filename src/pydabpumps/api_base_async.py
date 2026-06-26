@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum, StrEnum
 from typing import Any
 from urllib.parse import urlparse, parse_qs
+from uuid import UUID
 
 
 from .const import (
@@ -36,7 +37,6 @@ from .const import (
     DABCS_REFRESH_TOKEN_VALID,
     DABSSO_ACCESS_TOKEN_VALID,
     DABSSO_REFRESH_TOKEN_VALID,
-    DEVICE_ATTR_EXTRA,
     H2D_APP_CLIENT_ID,
     H2D_APP_CLIENT_SECRET,
     H2D_APP_DABCS_AUTH,
@@ -48,6 +48,10 @@ from .const import (
     DCONNECT_APP_CLIENT_ID,
     DCONNECT_APP_CLIENT_SECRET,
     DCONNECT_APP_DABCS_AUTH,
+    DCONNECT_WEB_CLIENT_ID,
+    DCONNECT_WEB_CLIENT_SECRET,
+    DCONNECT_WEB_REDIRECT_URI,
+    DEVICE_ATTR_EXTRA,
     STATUS_UPDATE_HOLD,
     HTTPX_REQUEST_TIMEOUT,
     utcnow,
@@ -214,7 +218,8 @@ class AsyncDabPumpsBase:
         error = None
         
         if test_method is None:
-            methods = [DabPumpsLogin.ACCESS_TOKEN, DabPumpsLogin.REFRESH_TOKEN, self._login_info.login_method, DabPumpsLogin.H2D_APP, DabPumpsLogin.DABLIVE_APP, DabPumpsLogin.DCONNECT_APP, DabPumpsLogin.DCONNECT_WEB]
+            methods = [DabPumpsLogin.ACCESS_TOKEN, DabPumpsLogin.REFRESH_TOKEN, self._login_info.login_method, DabPumpsLogin.H2D_APP, DabPumpsLogin.DABLIVE_APP, DabPumpsLogin.DCONNECT_APP]  
+            # DabPumpsLogin.DCONNECT_WEB removed because it does not support Wamp/Push data
         else:
             methods = [test_method]
             
@@ -239,6 +244,7 @@ class AsyncDabPumpsBase:
                     case DabPumpsLogin.DCONNECT_WEB:
                         # Finally try the most complex and unreliable one
                         success = await self._login_dconnect_web()
+                        # success = await self._login_dabsso(method)  # Experimental, does not work yet...
                     case _:
                         # No previously known login method was set yet
                         success =  False
@@ -360,7 +366,8 @@ class AsyncDabPumpsBase:
 
         # Step 0: generate an unique state and a code challenge
         state_bytes = os.urandom(16)
-        openid_state_req = base64.urlsafe_b64encode(state_bytes).decode('utf-8').rstrip('=')
+        state_b64 = base64.urlsafe_b64encode(state_bytes).decode('utf-8').rstrip('=')
+        state_guid = str(UUID(bytes=state_bytes))
 
         openid_code_bytes = os.urandom(86)
         openid_code_verifier = base64.urlsafe_b64encode(openid_code_bytes).decode('utf-8').rstrip('=')
@@ -372,11 +379,19 @@ class AsyncDabPumpsBase:
                 openid_client_id = DABLIVE_APP_CLIENT_ID
                 openid_client_secret = DABLIVE_APP_CLIENT_SECRET
                 openid_redirect_uri = DABLIVE_APP_REDIRECT_URI
+                openid_state = state_b64
+
+            case DabPumpsLogin.DCONNECT_WEB:    # Experimental in _login_dabsso()
+                openid_client_id = DCONNECT_WEB_CLIENT_ID
+                openid_client_secret = DCONNECT_WEB_CLIENT_SECRET
+                openid_redirect_uri = DCONNECT_WEB_REDIRECT_URI
+                openid_state = state_b64
 
             case DabPumpsLogin.H2D_APP | _:
                 openid_client_id = H2D_APP_CLIENT_ID
                 openid_client_secret = H2D_APP_CLIENT_SECRET
                 openid_redirect_uri = H2D_APP_REDIRECT_URI
+                openid_state = state_b64
 
         # Step 1: get login url
         context = f"login {method} openid-connect auth"
@@ -386,7 +401,7 @@ class AsyncDabPumpsBase:
             'params': {
                 'client_id': openid_client_id,
                 'response_type': 'code',
-                'state': openid_state_req,
+                'state': openid_state,
                 'scope': 'openid profile email phone',
                 'code_challenge': openid_code_challenge,
                 'code_challenge_method': 'S256',
@@ -436,8 +451,8 @@ class AsyncDabPumpsBase:
         openid_state_rsp = parse_qs(location_url.query).get('state')[0]
         openid_code = parse_qs(location_url.query).get('code')[0]
 
-        if openid_state_rsp != openid_state_req:
-            _LOGGER.debug(f"Unexpected state value in response while authenticating: '{openid_state_rsp}', expected '{openid_state_req}")
+        if openid_state_rsp != openid_state:
+            _LOGGER.debug(f"Unexpected state value in response while authenticating: '{openid_state_rsp}', expected '{openid_state}")
 
         # Step 3: Get Access and Refresh Tokens
         context = f"login {method} openid-connect token"
