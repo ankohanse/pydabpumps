@@ -336,7 +336,7 @@ async def test_get_data(name, method, loop, exp_except, request):
     [
         ("ok",  None,                        0, None),
         ("ok",  DabPumpsLogin.H2D_APP,       0, None),
-        ("ok",  DabPumpsLogin.DABLIVE_APP,   0, DabPumpsError),
+        ("ok",  DabPumpsLogin.DABLIVE_APP,   0, None),
         ("ok",  DabPumpsLogin.DCONNECT_APP,  0, None),
         ("ok",  DabPumpsLogin.DCONNECT_WEB,  0, DabPumpsError),
         #
@@ -735,7 +735,7 @@ async def test_strings(name, lang, exp_lang, request):
     [
         ("ok",  None,                        3, None),
         ("ok",  DabPumpsLogin.H2D_APP,       3, None),
-        ("ok",  DabPumpsLogin.DABLIVE_APP,   1, None),
+        ("ok",  DabPumpsLogin.DABLIVE_APP,   3, None),
         ("ok",  DabPumpsLogin.DCONNECT_APP,  1, None),
         ("ok",  DabPumpsLogin.DCONNECT_WEB,  2, None),
     ]

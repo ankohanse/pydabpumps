@@ -4,11 +4,13 @@ import secrets
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import ClassVar
 
 from .const import (
     DABCS_API_DOMAIN,
-    DABCS_AUTH,
     DCONNECT_API_DOMAIN,
+    H2D_APP_DABCS_AUTH,
+    DABLIVE_APP_DABCS_AUTH,
     DCONNECT_APP_USER_AGENT,
 )
 
@@ -221,10 +223,10 @@ class DabPumpsRefreshTokenInfo:
 
 @dataclass
 class DabPumpsSessionInfo:
-    dabcs_auth: str = DABCS_AUTH
-    dabcs_device: str = secrets.token_hex(8)
     key: str = None
     wstoken: str = None
+    dabcs_auth: str = None     
+    dabcs_device: ClassVar[str] = secrets.token_hex(8)  # Static class variable, will never change once assigned
 
 
 @dataclass

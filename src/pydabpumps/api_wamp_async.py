@@ -138,16 +138,12 @@ class AsyncDabPumps(AsyncDabPumpsBase):
         if device is None: 
             return False
         
-        topic= f"dabcs.iop.{device.install_id}.dums.{device.id}"
-
-        _LOGGER.info(f"Subscribe to changes for device '{serial}' via topic '{topic}'")
-
         await self._wamp_subscribe_request(
             context = f"subscribe device {serial}",
             request = {
                 'method': WampMethod.SUBSCRIBE,
                 'type': WampSubscriptionType.DEVICE_STATE,
-                'topic': topic,
+                'topic': f"dabcs.iop.{device.install_id}.dums.{device.id}",
                 'device_serial': serial,
             },
             callback = callback,
@@ -230,12 +226,15 @@ class AsyncDabPumps(AsyncDabPumpsBase):
         await self._start_user_session()
         await self._start_wamp_session()
         
+        serial = request['device_serial']
+        topic = request['topic']
+        _LOGGER.info(f"Subscribe to changes for device '{serial}' via topic '{topic}'")
+
         # Perform the request
         timestamp = utcnow()
         response = {}
         try:
             # Remember this subscription request in case we need to reconnect later
-            topic = request['topic']
             self._wamp_subscription_map[topic] = WampSubscriptionDetails(context=context, request=request, response=None, callback=callback)
 
             # If session is not (yet) joined then we're done. Wamp request will be triggered once (re-)joined

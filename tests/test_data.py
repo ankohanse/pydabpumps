@@ -25,7 +25,7 @@ async def test_dict():
 
     install_obj1 = DabPumpsInstall(id="tst_id", name="tst_name")
     install_obj2 = DabPumpsInstall(id="tst_id", name="tst_name", description="tst_descr", company="tst_company", address="tst_address", role=DabPumpsUserRole.INSTALLER, subscr_ts=datetime.now(tz=timezone.utc), devices=2)
-    device_obj = DabPumpsDevice(serial="tst_serial", name="tst_name", vendor="tst_vendor", product="tst_product", hw_version="tst_version", sw_version="", mac_address="tst_mac", config_id="tst_config_id", install_id="tst_install_id")
+    device_obj = DabPumpsDevice(id="tst_device", serial="tst_serial", name="tst_name", vendor="tst_vendor", product="tst_product", hw_version="tst_version", sw_version="", mac_address="tst_mac", config_id="tst_config_id", install_id="tst_install_id")
     param_obj = DabPumpsParams(name="tst_name", type=DabPumpsParamType.MEASURE, unit="tst", weight=10, values={"1":"one","2":"two"}, min=None, max=None, family="tst_family", group="tst_group", view="ci", change="")
     config_obj1 = DabPumpsDeviceConfig(id="tst_id1", label="tst_label", description="tst_descr", meta_params={})
     config_obj2 = DabPumpsDeviceConfig(id="tst_id2", label="tst_label", description="tst_descr", meta_params={"param_key": param_obj})

@@ -5,6 +5,8 @@ import logging
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 DABSSO_API_URL = "https://dabsso.dabpumps.com"
+DABSSO_ACCESS_TOKEN_VALID = 5*60  # 5 minutes in seconds
+DABSSO_REFRESH_TOKEN_VALID = 30*24*60*60 # 30 days in seconds
 
 # DABCS is used for H2D_APP
 DABCS_API_URL = "https://api.eu.dabcs.it"
@@ -12,7 +14,6 @@ DABCS_API_DOMAIN = "api.eu.dabcs.it"
 DABCS_INIT_URL = DABCS_API_URL + "/mobile/v1/initialconfig"
 DABCS_ACCESS_TOKEN_VALID = 5*60  # 5 minutes in seconds
 DABCS_REFRESH_TOKEN_VALID = 30*24*60*60 # 30 days in seconds
-DABCS_AUTH = "vwLbTh3HKJdjHRHzdEHen43PyffAc9gK"
 
 # DCONNECT is used for DABLIVE_APP, DCONNECT_APP and DCONNECT_WEB
 DCONNECT_API_URL = "https://dconnect.dabpumps.com"
@@ -22,13 +23,20 @@ DCONNECT_ACCESS_TOKEN_VALID = 5*60  # 5 minutes in seconds
 DCONNECT_REFRESH_TOKEN_COOKIE = "dabcsauthtoken"
 DCONNECT_REFRESH_TOKEN_VALID = 30*60 # 30 minutes in seconds
 
-H2D_APP_REDIRECT_URI = 'dabiopapp://Welcome'
 H2D_APP_CLIENT_ID = 'h2d-mobile'
 H2D_APP_CLIENT_SECRET = None
+H2D_APP_REDIRECT_URI = 'dabiopapp://Welcome'
+H2D_APP_DABCS_AUTH = "vwLbTh3HKJdjHRHzdEHen43PyffAc9gK"
+
+DABLIVE_APP_CLIENT_ID = 'dablive'
+DABLIVE_APP_CLIENT_SECRET = None
+DABLIVE_APP_REDIRECT_URI = 'com.dabappfreemium://Login'
+DABLIVE_APP_DABCS_AUTH = "oAfA7xCgFqJnk4josgdFbjPcUFRzyUY9fgo7ANLcjXUTuyoL4a4MXKRErRaUiPyJ"
 
 DCONNECT_APP_CLIENT_ID = 'DWT-Dconnect-Mobile'
 DCONNECT_APP_CLIENT_SECRET = 'ce2713d8-4974-4e0c-a92e-8b942dffd561'
 DCONNECT_APP_USER_AGENT = 'Dalvik/2.1.0 (Linux; U; Android 9; SM-G935F Build/PI) DConnect/2.13.1'
+DCONNECT_APP_DABCS_AUTH = "vwLbTh3HKJdjHRHzdEHen43PyffAc9gK"
 
 # WAMP is used for push messages from the H2D servers
 WAMP_URL = 'wss://dconnect.dabpumps.com/wsapp'
