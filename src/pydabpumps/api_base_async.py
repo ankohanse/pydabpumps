@@ -59,6 +59,7 @@ from .const import (
 )
 
 from .data import (
+    DabPumpsApiFlag,
     DabPumpsError,
     DabPumpsConnectError,
     DabPumpsAuthError,
@@ -83,13 +84,18 @@ from .data import (
     DabPumpsHistoryDetail,
 )
 
+from .tasks import (
+    AsyncTaskHelper,
+    TaskHelper,
+)
+
 _LOGGER = logging.getLogger(__name__)
 
 
 # DabPumps api to detect device and get device info, fetch the actual data from the device, and parse it
 class AsyncDabPumpsBase:
     
-    def __init__(self, username, password, client:httpx.AsyncClient=None, login_info:DabPumpsLoginInfo=None, access_token_info:DabPumpsAccessTokenInfo=None, refresh_token_info:DabPumpsRefreshTokenInfo=None):
+    def __init__(self, username, password, client:httpx.AsyncClient=None, login_info:DabPumpsLoginInfo=None, access_token_info:DabPumpsAccessTokenInfo=None, refresh_token_info:DabPumpsRefreshTokenInfo=None, flags:dict[DabPumpsApiFlag,Any] = {}):
         # Configuration
         self._username: str = username
         self._password: str = password
@@ -100,6 +106,11 @@ class AsyncDabPumpsBase:
         self._access_token_info: DabPumpsAccessTokenInfo = access_token_info or DabPumpsAccessTokenInfo()
         self._refresh_token_info: DabPumpsRefreshTokenInfo = refresh_token_info or DabPumpsRefreshTokenInfo()
         self._session_info: DabPumpsSessionInfo = DabPumpsSessionInfo()
+        
+        # Automatic refresh of access token
+        self._refresh_handler_start = flags.get(DabPumpsApiFlag.REFRESH_HANDLER_START, True)
+        self._refresh_task = None
+        self._refresh_schedule: float = 0
 
         # Retrieved data
         self._install_map: dict[str, DabPumpsInstall] = {}              # install_id => install
@@ -205,6 +216,11 @@ class AsyncDabPumpsBase:
         async with self._login_lock:
             await self._login(test_method=test_method)
 
+            # If needed, start our login_refresh_handler thread
+            if self._refresh_handler_start and self._refresh_task is None:
+                self._refresh_task = AsyncTaskHelper()
+                await self._refresh_task.start(self._login_refresh_handler)
+
 
     async def _login(self, test_method:DabPumpsLogin=None):
         """Login to DAB Pumps by trying each of the possible login methods"""        
@@ -283,7 +299,7 @@ class AsyncDabPumpsBase:
 
         # Dab Pumps seems to ignore the expiry field inside the token, using only
         # the expires_in field that was passed alongside the token.
-        if utcnow() > self._access_token_info.expiry:
+        if utcnow() >= self._access_token_info.expiry:
             _LOGGER.debug(f"Access-Token expired")
             return False    # silently continue to the next login method (token refresh)
 
@@ -340,10 +356,12 @@ class AsyncDabPumpsBase:
 
         self._access_token_info = DabPumpsAccessTokenInfo(
             token = self._validate_token( result.get('access_token') ),
+            expires_in = result.get('expires_in') or default_access_expires_in,
             expiry = self._calculate_expiry( result.get('expires_in'), default_access_expires_in ),
         )
         self._refresh_token_info = DabPumpsRefreshTokenInfo(
             token = self._validate_token( result.get('refresh_token') ),
+            expires_in = result.get('expires_in') or default_refresh_expires_in,
             expiry = self._calculate_expiry( result.get('refresh_expires_in'), default_refresh_expires_in ),
             client_id = self._refresh_token_info.client_id,
             client_secret = self._refresh_token_info.client_secret,
@@ -477,12 +495,17 @@ class AsyncDabPumpsBase:
         _LOGGER.debug(f"Try login with {method}; retrieve tokens")
         result = await self._send_request(context, request)
         
+        default_access_expires_in = DABCS_ACCESS_TOKEN_VALID if self.login_info.fetch_method==DabPumpsFetch.DABCS else DCONNECT_ACCESS_TOKEN_VALID
+        default_refresh_expires_in = DABCS_REFRESH_TOKEN_VALID if self.login_info.fetch_method==DabPumpsFetch.DABCS else DCONNECT_REFRESH_TOKEN_VALID
+
         self._access_token_info = DabPumpsAccessTokenInfo(
             token = self._validate_token( result.get('access_token') ),
+            expires_in = result.get('expires_in') or default_access_expires_in,
             expiry = self._calculate_expiry( result.get('expires_in'), DABSSO_ACCESS_TOKEN_VALID ),
         )
         self._refresh_token_info = DabPumpsRefreshTokenInfo(
             token = self._validate_token( result.get('refresh_token') ),
+            expires_in = result.get('expires_in') or default_refresh_expires_in,
             expiry = self._calculate_expiry( result.get('refresh_expires_in'), DABSSO_REFRESH_TOKEN_VALID ),
             client_id = openid_client_id,
             client_secret = openid_client_secret,
@@ -492,7 +515,7 @@ class AsyncDabPumpsBase:
             error = f"No tokens found in response from {request["url"]}"
             _LOGGER.debug(error)    # logged as warning after last retry
             raise DabPumpsAuthError(error)
-
+       
         # if we reach this point then the token was OK
         self._login_info = DabPumpsLoginInfo(
             login_method = method,
@@ -530,10 +553,12 @@ class AsyncDabPumpsBase:
 
         self._access_token_info = DabPumpsAccessTokenInfo(
             token = self._validate_token( result.get('access_token') ),
+            expires_in = result.get('expires_in') or DCONNECT_ACCESS_TOKEN_VALID,
             expiry = self._calculate_expiry( result.get('expires_in'), DCONNECT_ACCESS_TOKEN_VALID ),
         )
         self._refresh_token_info = DabPumpsRefreshTokenInfo(
             token = self._validate_token( result.get('refresh_token') ),
+            expires_in = result.get('expires_in') or DCONNECT_REFRESH_TOKEN_VALID,
             expiry = self._calculate_expiry( result.get('refresh_expires_in'), DCONNECT_REFRESH_TOKEN_VALID ),
             client_id = openid_client_id,
             client_secret = openid_client_secret,
@@ -600,10 +625,12 @@ class AsyncDabPumpsBase:
         # No need to remember access-token, we never need to pass it as header with this login method
         self._access_token_info = DabPumpsAccessTokenInfo(
             token = access_token,
+            expires_in = None,
             expiry = datetime.max,  # Always let access-token expiry check succeed,
         )
         self._refresh_token_info = DabPumpsRefreshTokenInfo(
             token = None,
+            expires_in = None,
             expiry = datetime.max, # Always let refresh-token expiry check succeed,
             client_id = None,
             client_secret = None,
@@ -616,6 +643,33 @@ class AsyncDabPumpsBase:
         _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
         return True
     
+
+    async def _login_refresh_handler(self) -> bool:
+        """
+        Parallel task that will refresh the access token when scheduled.
+        """
+        _LOGGER.debug(f"Token refresh handler started")
+
+        while not self._refresh_task.is_stop_requested():
+            try:
+                # Wait until access token is almost expired, or wait at least 1 minute
+                exp = self._access_token_info.expiry or utcnow()
+                now = utcnow()
+                delay = max((exp - now).total_seconds(), 60)
+
+                if await self._refresh_task.wait_for_stop(timeout = delay):
+                    # Stop event detected
+                    pass
+                else:
+                    # Reuse access token, refresh it, or re-login
+                    await self.login()
+
+            except Exception as ex:
+                _LOGGER.debug(f"Token refresh handler caught exception: {ex}")
+        
+        _LOGGER.debug(f"Token refresh handler stopped")
+        return True
+
 
     async def _start_user_session(self) -> bool:
         """
@@ -729,6 +783,11 @@ class AsyncDabPumpsBase:
         # Once one thread is done, the next thread can then check the (new) token cookie.
         async with self._login_lock:
             await self._logout(context="", method=None)
+            
+            # Stop token refresh_handler
+            if self._refresh_task is not None:
+                await self._refresh_task.stop()
+                self._refresh_task = None
 
 
     async def _logout(self, context: str, method: DabPumpsLogin|None = None):
@@ -749,6 +808,7 @@ class AsyncDabPumpsBase:
         self._http_client.cookies.delete(name=DCONNECT_ACCESS_TOKEN_COOKIE, domain=DCONNECT_API_DOMAIN)
         self._access_token_info = DabPumpsAccessTokenInfo(
             token = None,
+            expires_in = None,
             expiry = None,
         )
 
@@ -757,6 +817,7 @@ class AsyncDabPumpsBase:
             self._http_client.cookies.delete(name=DCONNECT_REFRESH_TOKEN_COOKIE, domain=DCONNECT_API_DOMAIN)
             self._refresh_token_info = DabPumpsRefreshTokenInfo(
                 token = None,
+                expires_in = None,
                 expiry = None,
                 client_id = None,
                 client_secret = None,

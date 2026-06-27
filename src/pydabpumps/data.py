@@ -12,6 +12,7 @@ from .const import (
     H2D_APP_DABCS_AUTH,
     DABLIVE_APP_DABCS_AUTH,
     DCONNECT_APP_USER_AGENT,
+    utcnow,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,6 +30,10 @@ class DabPumpsAuthError(DabPumpsError):
 class DabPumpsDataError(DabPumpsError):
     """Exception to indicate generic data failure."""  
 
+
+class DabPumpsApiFlag(StrEnum):
+    """Extra flags to pass to Api"""
+    REFRESH_HANDLER_START   = "refresh_handler_start"   # bool
 
 class DabPumpsLogin(StrEnum):
     ACCESS_TOKEN = 'Access-Token'
@@ -194,7 +199,8 @@ class DabPumpsLoginInfo:
 @dataclass
 class DabPumpsAccessTokenInfo:
     token: str = None
-    expiry: datetime = None
+    expires_in: int = None # seconds
+    expiry: datetime = None #utc
 
     def __post_init__(self):
         """
@@ -208,7 +214,8 @@ class DabPumpsAccessTokenInfo:
 @dataclass
 class DabPumpsRefreshTokenInfo:
     token: str = None
-    expiry: datetime = None
+    expires_in: int = None # seconds
+    expiry: datetime = None # utc
     client_id: str = None
     client_secret: str = None
 

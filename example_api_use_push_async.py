@@ -116,10 +116,7 @@ async def main():
             await api.on_device_state(serial, show_device_state)
 
         # Keep the application alive
-        for t in range(60):
-            # Regularly repeat the login call to make sure the access-token is renewed when needed.
-            # This will also reconnect any push session is it has become disconnected.
-            await api.login()
+        for t in range(8*60):
 
             # In addition to waiting for push statuses to arrive, you can still
             # poll for fresh statuses for all devices in this install

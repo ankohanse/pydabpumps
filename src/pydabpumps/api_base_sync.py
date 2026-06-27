@@ -21,16 +21,15 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum, StrEnum
 from typing import Any
 from urllib.parse import urlparse, parse_qs
+from uuid import UUID
 
 
 from .const import (
-    DABLIVE_APP_DABCS_AUTH,
     DABSSO_API_URL,
     DCONNECT_API_URL,
     DCONNECT_API_DOMAIN,
     DCONNECT_ACCESS_TOKEN_COOKIE,
     DCONNECT_ACCESS_TOKEN_VALID,
-    DCONNECT_APP_DABCS_AUTH,
     DCONNECT_REFRESH_TOKEN_COOKIE,
     DCONNECT_REFRESH_TOKEN_VALID,
     DABCS_INIT_URL,
@@ -40,7 +39,6 @@ from .const import (
     DABCS_REFRESH_TOKEN_VALID,
     DABSSO_ACCESS_TOKEN_VALID,
     DABSSO_REFRESH_TOKEN_VALID,
-    DEVICE_ATTR_EXTRA,
     H2D_APP_CLIENT_ID,
     H2D_APP_CLIENT_SECRET,
     H2D_APP_DABCS_AUTH,
@@ -48,8 +46,14 @@ from .const import (
     DABLIVE_APP_CLIENT_ID,
     DABLIVE_APP_CLIENT_SECRET,
     DABLIVE_APP_REDIRECT_URI,
+    DABLIVE_APP_DABCS_AUTH,
     DCONNECT_APP_CLIENT_ID,
     DCONNECT_APP_CLIENT_SECRET,
+    DCONNECT_APP_DABCS_AUTH,
+    DCONNECT_WEB_CLIENT_ID,
+    DCONNECT_WEB_CLIENT_SECRET,
+    DCONNECT_WEB_REDIRECT_URI,
+    DEVICE_ATTR_EXTRA,
     STATUS_UPDATE_HOLD,
     HTTPX_REQUEST_TIMEOUT,
     utcnow,
@@ -57,6 +61,7 @@ from .const import (
 )
 
 from .data import (
+    DabPumpsApiFlag,
     DabPumpsError,
     DabPumpsConnectError,
     DabPumpsAuthError,
@@ -80,6 +85,11 @@ from .data import (
     DabPumpsHistoryItem,
     DabPumpsHistoryDetail,
 )
+
+from .tasks import (
+    AsyncTaskHelper,
+    TaskHelper,
+)
 import threading
 
 _LOGGER = logging.getLogger(__name__)
@@ -88,7 +98,7 @@ _LOGGER = logging.getLogger(__name__)
 # DabPumps api to detect device and get device info, fetch the actual data from the device, and parse it
 class DabPumpsBase:
     
-    def __init__(self, username, password, client:httpx.Client=None, login_info:DabPumpsLoginInfo=None, access_token_info:DabPumpsAccessTokenInfo=None, refresh_token_info:DabPumpsRefreshTokenInfo=None):
+    def __init__(self, username, password, client:httpx.Client=None, login_info:DabPumpsLoginInfo=None, access_token_info:DabPumpsAccessTokenInfo=None, refresh_token_info:DabPumpsRefreshTokenInfo=None, flags:dict[DabPumpsApiFlag,Any] = {}):
         # Configuration
         self._username: str = username
         self._password: str = password
@@ -99,6 +109,11 @@ class DabPumpsBase:
         self._access_token_info: DabPumpsAccessTokenInfo = access_token_info or DabPumpsAccessTokenInfo()
         self._refresh_token_info: DabPumpsRefreshTokenInfo = refresh_token_info or DabPumpsRefreshTokenInfo()
         self._session_info: DabPumpsSessionInfo = DabPumpsSessionInfo()
+        
+        # Automatic refresh of access token
+        self._refresh_handler_start = flags.get(DabPumpsApiFlag.REFRESH_HANDLER_START, True)
+        self._refresh_task = None
+        self._refresh_schedule: float = 0
 
         # Retrieved data
         self._install_map: dict[str, DabPumpsInstall] = {}              # install_id => install
@@ -204,6 +219,11 @@ class DabPumpsBase:
         with self._login_lock:
             self._login(test_method=test_method)
 
+            # If needed, start our login_refresh_handler thread
+            if self._refresh_handler_start and self._refresh_task is None:
+                self._refresh_task = TaskHelper()
+                self._refresh_task.start(self._login_refresh_handler)
+
 
     def _login(self, test_method:DabPumpsLogin=None):
         """Login to DAB Pumps by trying each of the possible login methods"""        
@@ -217,7 +237,8 @@ class DabPumpsBase:
         error = None
         
         if test_method is None:
-            methods = [DabPumpsLogin.ACCESS_TOKEN, DabPumpsLogin.REFRESH_TOKEN, self._login_info.login_method, DabPumpsLogin.H2D_APP, DabPumpsLogin.DABLIVE_APP, DabPumpsLogin.DCONNECT_APP, DabPumpsLogin.DCONNECT_WEB]
+            methods = [DabPumpsLogin.ACCESS_TOKEN, DabPumpsLogin.REFRESH_TOKEN, self._login_info.login_method, DabPumpsLogin.H2D_APP, DabPumpsLogin.DABLIVE_APP, DabPumpsLogin.DCONNECT_APP]  
+            # DabPumpsLogin.DCONNECT_WEB removed because it does not support Wamp/Push data
         else:
             methods = [test_method]
             
@@ -242,6 +263,7 @@ class DabPumpsBase:
                     case DabPumpsLogin.DCONNECT_WEB:
                         # Finally try the most complex and unreliable one
                         success = self._login_dconnect_web()
+                        # success = await self._login_dabsso(method)  # Experimental, does not work yet...
                     case _:
                         # No previously known login method was set yet
                         success =  False
@@ -280,7 +302,7 @@ class DabPumpsBase:
 
         # Dab Pumps seems to ignore the expiry field inside the token, using only
         # the expires_in field that was passed alongside the token.
-        if utcnow() > self._access_token_info.expiry:
+        if utcnow() >= self._access_token_info.expiry:
             _LOGGER.debug(f"Access-Token expired")
             return False    # silently continue to the next login method (token refresh)
 
@@ -337,10 +359,12 @@ class DabPumpsBase:
 
         self._access_token_info = DabPumpsAccessTokenInfo(
             token = self._validate_token( result.get('access_token') ),
+            expires_in = result.get('expires_in') or default_access_expires_in,
             expiry = self._calculate_expiry( result.get('expires_in'), default_access_expires_in ),
         )
         self._refresh_token_info = DabPumpsRefreshTokenInfo(
             token = self._validate_token( result.get('refresh_token') ),
+            expires_in = result.get('expires_in') or default_refresh_expires_in,
             expiry = self._calculate_expiry( result.get('refresh_expires_in'), default_refresh_expires_in ),
             client_id = self._refresh_token_info.client_id,
             client_secret = self._refresh_token_info.client_secret,
@@ -363,7 +387,8 @@ class DabPumpsBase:
 
         # Step 0: generate an unique state and a code challenge
         state_bytes = os.urandom(16)
-        openid_state_req = base64.urlsafe_b64encode(state_bytes).decode('utf-8').rstrip('=')
+        state_b64 = base64.urlsafe_b64encode(state_bytes).decode('utf-8').rstrip('=')
+        state_guid = str(UUID(bytes=state_bytes))
 
         openid_code_bytes = os.urandom(86)
         openid_code_verifier = base64.urlsafe_b64encode(openid_code_bytes).decode('utf-8').rstrip('=')
@@ -375,11 +400,19 @@ class DabPumpsBase:
                 openid_client_id = DABLIVE_APP_CLIENT_ID
                 openid_client_secret = DABLIVE_APP_CLIENT_SECRET
                 openid_redirect_uri = DABLIVE_APP_REDIRECT_URI
+                openid_state = state_b64
 
-            case _:
+            case DabPumpsLogin.DCONNECT_WEB:    # Experimental in _login_dabsso()
+                openid_client_id = DCONNECT_WEB_CLIENT_ID
+                openid_client_secret = DCONNECT_WEB_CLIENT_SECRET
+                openid_redirect_uri = DCONNECT_WEB_REDIRECT_URI
+                openid_state = state_b64
+
+            case DabPumpsLogin.H2D_APP | _:
                 openid_client_id = H2D_APP_CLIENT_ID
                 openid_client_secret = H2D_APP_CLIENT_SECRET
                 openid_redirect_uri = H2D_APP_REDIRECT_URI
+                openid_state = state_b64
 
         # Step 1: get login url
         context = f"login {method} openid-connect auth"
@@ -389,7 +422,7 @@ class DabPumpsBase:
             'params': {
                 'client_id': openid_client_id,
                 'response_type': 'code',
-                'state': openid_state_req,
+                'state': openid_state,
                 'scope': 'openid profile email phone',
                 'code_challenge': openid_code_challenge,
                 'code_challenge_method': 'S256',
@@ -439,8 +472,8 @@ class DabPumpsBase:
         openid_state_rsp = parse_qs(location_url.query).get('state')[0]
         openid_code = parse_qs(location_url.query).get('code')[0]
 
-        if openid_state_rsp != openid_state_req:
-            _LOGGER.debug(f"Unexpected state value in response while authenticating: '{openid_state_rsp}', expected '{openid_state_req}")
+        if openid_state_rsp != openid_state:
+            _LOGGER.debug(f"Unexpected state value in response while authenticating: '{openid_state_rsp}', expected '{openid_state}")
 
         # Step 3: Get Access and Refresh Tokens
         context = f"login {method} openid-connect token"
@@ -465,12 +498,17 @@ class DabPumpsBase:
         _LOGGER.debug(f"Try login with {method}; retrieve tokens")
         result = self._send_request(context, request)
         
+        default_access_expires_in = DABCS_ACCESS_TOKEN_VALID if self.login_info.fetch_method==DabPumpsFetch.DABCS else DCONNECT_ACCESS_TOKEN_VALID
+        default_refresh_expires_in = DABCS_REFRESH_TOKEN_VALID if self.login_info.fetch_method==DabPumpsFetch.DABCS else DCONNECT_REFRESH_TOKEN_VALID
+
         self._access_token_info = DabPumpsAccessTokenInfo(
             token = self._validate_token( result.get('access_token') ),
+            expires_in = result.get('expires_in') or default_access_expires_in,
             expiry = self._calculate_expiry( result.get('expires_in'), DABSSO_ACCESS_TOKEN_VALID ),
         )
         self._refresh_token_info = DabPumpsRefreshTokenInfo(
             token = self._validate_token( result.get('refresh_token') ),
+            expires_in = result.get('expires_in') or default_refresh_expires_in,
             expiry = self._calculate_expiry( result.get('refresh_expires_in'), DABSSO_REFRESH_TOKEN_VALID ),
             client_id = openid_client_id,
             client_secret = openid_client_secret,
@@ -480,183 +518,13 @@ class DabPumpsBase:
             error = f"No tokens found in response from {request["url"]}"
             _LOGGER.debug(error)    # logged as warning after last retry
             raise DabPumpsAuthError(error)
-
+       
         # if we reach this point then the token was OK
         self._login_info = DabPumpsLoginInfo(
             login_method = method,
         )
         _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
         return True
-
-        
-    # async def _login_h2d_app(self) -> bool:
-    #     """Login to DAB Pumps via the method as used by the H2D app"""
-
-    #     # Step 0: generate an unique state and a code challenge
-    #     state_bytes = os.urandom(16)
-    #     openid_state_req = base64.urlsafe_b64encode(state_bytes).decode('utf-8').rstrip('=')
-
-    #     openid_code_bytes = os.urandom(86)
-    #     openid_code_verifier = base64.urlsafe_b64encode(openid_code_bytes).decode('utf-8').rstrip('=')
-    #     openid_hashed_verifier = hashlib.sha256(openid_code_verifier.encode('utf-8')).digest()
-    #     openid_code_challenge = base64.urlsafe_b64encode(openid_hashed_verifier).decode('utf-8').rstrip('=')
-
-    #     openid_client_id = H2D_APP_CLIENT_ID
-    #     openid_client_secret = H2D_APP_CLIENT_SECRET
-
-    #     # Step 1: get login url
-    #     context = f"login H2D_app openid-connect auth"
-    #     request = {
-    #         "method": "GET",
-    #         "url": DABSSO_API_URL + '/auth/realms/dwt-group/protocol/openid-connect/auth',
-    #         'params': {
-    #             'client_id': openid_client_id,
-    #             'response_type': 'code',
-    #             'code_challenge': openid_code_challenge,
-    #             'code_challenge_method': 'S256',
-    #             'state': openid_state_req,
-    #             'scope': 'openid profile email phone',
-    #             'redirect_uri': H2D_APP_REDIRECT_URI,
-    #         },
-    #         "flags": {
-    #             'redirects': False,
-    #         }
-    #     }
-
-    #     _LOGGER.debug(f"Try login with H2D; retrieve auth page")
-    #     text = await self._send_request(context, request)
-        
-    #     match = re.search(r'action\s?=\s?\"(.*?)\"', text, re.MULTILINE)
-    #     if not match:    
-    #         error = f"Unexpected response while retrieving openid-connect from {request["url"]}: {text}"
-    #         _LOGGER.debug(error)    # logged as warning after last retry
-    #         raise DabPumpsAuthError(error)
-        
-    #     # Step 2: Authenticate
-    #     context = f"login H2D_app authenticate"
-    #     request = {
-    #         "method": "POST",
-    #         "url": match.group(1).replace('&amp;', '&'),
-    #         "headers": {
-    #             'Content-Type': 'application/x-www-form-urlencoded',
-    #         },
-    #         "data": {
-    #             'username': self._username, 
-    #             'password': self._password,
-    #         },
-    #         "flags": {
-    #             'redirects': False,
-    #         }
-    #     }
-        
-    #     _LOGGER.debug(f"Try login with H2D; authenticate '{self._username}'")
-    #     location_str = await self._send_request(context, request)
-
-    #     # Returned value is a redirect location containing state and session_state
-    #     if not location_str.startswith(H2D_APP_REDIRECT_URI) or not "code=" in text:
-    #         error = f"Unexpected response while authenticating from {request["url"]}: {text}"
-    #         _LOGGER.debug(error)    # logged as warning after last retry
-    #         raise DabPumpsAuthError(error)
-        
-    #     location_url = urlparse(location_str)
-    #     openid_state_rsp = parse_qs(location_url.query).get('state')[0]
-    #     openid_code = parse_qs(location_url.query).get('code')[0]
-
-    #     if openid_state_rsp != openid_state_req:
-    #         _LOGGER.debug(f"Unexpected state value in response while authenticating: '{openid_state_rsp}', expected '{openid_state_req}")
-
-    #     # Step 3: Get Access and Refresh Tokens
-    #     context = f"login H2D_app openid-connect token"
-    #     request = {
-    #         "method": "POST",
-    #         "url": DABSSO_API_URL + '/auth/realms/dwt-group/protocol/openid-connect/token',
-    #         "headers": {
-    #             'Content-Type': 'application/x-www-form-urlencoded',
-    #         },
-    #         "data": {
-    #             'grant_type': 'authorization_code',
-    #             'code': openid_code, 
-    #             'code_verifier': openid_code_verifier,
-    #             'client_id': openid_client_id,
-    #             'redirect_uri': H2D_APP_REDIRECT_URI,
-    #         },
-    #         "flags": {
-    #             'redirects': False,
-    #         }
-    #     }
-        
-    #     _LOGGER.debug(f"Try login with H2D; retrieve tokens")
-    #     result = await self._send_request(context, request)
-        
-    #     self._access_token_info = DabPumpsAccessTokenInfo(
-    #         token = self._validate_token( result.get('access_token') ),
-    #         expiry = self._calculate_expiry( result.get('expires_in'), DABCS_ACCESS_TOKEN_VALID ),
-    #     )
-    #     self._refresh_token_info = DabPumpsRefreshTokenInfo(
-    #         token = self._validate_token( result.get('refresh_token') ),
-    #         expiry = self._calculate_expiry( result.get('refresh_expires_in'), DABCS_REFRESH_TOKEN_VALID ),
-    #         client_id = openid_client_id,
-    #         client_secret = openid_client_secret,
-    #     )
-
-    #     if not self._access_token_info.token:
-    #         error = f"No tokens found in response from {request["url"]}"
-    #         _LOGGER.debug(error)    # logged as warning after last retry
-    #         raise DabPumpsAuthError(error)
-
-    #     # if we reach this point then the token was OK
-    #     self._login_info = DabPumpsLoginInfo(
-    #         login_method = DabPumpsLogin.H2D_APP,
-    #     )
-    #     _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
-    #     return True
-
-        
-    # async def _login_dablive_app(self) -> bool:
-    #     """Login to DAB Pumps via the method as used by the DAB Live app"""
-
-    #     # Step 1: get authorization token
-    #     context = f"login via DabLive App"
-    #     request = {
-    #         "method": "POST",
-    #         "url": DCONNECT_API_URL + f"/auth/token",
-    #         "params": {
-    #             'isDabLive': 1,     # required param, though actual value seems to be completely ignored
-    #         },
-    #         "headers": {
-    #             'Content-Type': 'application/x-www-form-urlencoded',
-    #         },
-    #         "data": {
-    #             'username': self._username, 
-    #             'password': self._password,
-    #         },
-    #     }
-        
-    #     _LOGGER.debug(f"Try login with DabLive; authenticate '{self._username}'")
-    #     result = await self._send_request(context, request)
-
-    #     self._access_token_info = DabPumpsAccessTokenInfo(
-    #         token = self._validate_token( result.get('access_token') ),
-    #         expiry = self._calculate_expiry( result.get('expires_in'), DCONNECT_ACCESS_TOKEN_VALID ),
-    #     )
-    #     self._refresh_token_info = DabPumpsRefreshTokenInfo(
-    #         token = self._validate_token( result.get('refresh_token') ),    # DAB Pumps currently always returns 'NOTIMPLEMENTEDYET', no refresh token mechanism for this login method...
-    #         expiry = self._calculate_expiry( result.get('refresh_expires_in'), DCONNECT_REFRESH_TOKEN_VALID ),
-    #         client_id = None,
-    #         client_secret = None,
-    #     )
-
-    #     if not self._access_token_info.token:
-    #         error = f"No tokens found in response from {request["url"]}"
-    #         _LOGGER.debug(error)    # logged as warning after last retry
-    #         raise DabPumpsAuthError(error)
-
-    #     # if we reach this point then the token was OK
-    #     self._login_info = DabPumpsLoginInfo(
-    #         login_method = DabPumpsLogin.DABLIVE_APP,
-    #     )
-    #     _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
-    #     return True
 
         
     def _login_dconnect_app(self) -> bool:
@@ -688,10 +556,12 @@ class DabPumpsBase:
 
         self._access_token_info = DabPumpsAccessTokenInfo(
             token = self._validate_token( result.get('access_token') ),
+            expires_in = result.get('expires_in') or DCONNECT_ACCESS_TOKEN_VALID,
             expiry = self._calculate_expiry( result.get('expires_in'), DCONNECT_ACCESS_TOKEN_VALID ),
         )
         self._refresh_token_info = DabPumpsRefreshTokenInfo(
             token = self._validate_token( result.get('refresh_token') ),
+            expires_in = result.get('expires_in') or DCONNECT_REFRESH_TOKEN_VALID,
             expiry = self._calculate_expiry( result.get('refresh_expires_in'), DCONNECT_REFRESH_TOKEN_VALID ),
             client_id = openid_client_id,
             client_secret = openid_client_secret,
@@ -758,10 +628,12 @@ class DabPumpsBase:
         # No need to remember access-token, we never need to pass it as header with this login method
         self._access_token_info = DabPumpsAccessTokenInfo(
             token = access_token,
+            expires_in = None,
             expiry = datetime.max,  # Always let access-token expiry check succeed,
         )
         self._refresh_token_info = DabPumpsRefreshTokenInfo(
             token = None,
+            expires_in = None,
             expiry = datetime.max, # Always let refresh-token expiry check succeed,
             client_id = None,
             client_secret = None,
@@ -774,6 +646,33 @@ class DabPumpsBase:
         _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
         return True
     
+
+    def _login_refresh_handler(self) -> bool:
+        """
+        Parallel task that will refresh the access token when scheduled.
+        """
+        _LOGGER.debug(f"Token refresh handler started")
+
+        while not self._refresh_task.is_stop_requested():
+            try:
+                # Wait until access token is almost expired, or wait at least 1 minute
+                exp = self._access_token_info.expiry or utcnow()
+                now = utcnow()
+                delay = max((exp - now).total_seconds(), 60)
+
+                if self._refresh_task.wait_for_stop(timeout = delay):
+                    # Stop event detected
+                    pass
+                else:
+                    # Reuse access token, refresh it, or re-login
+                    self.login()
+
+            except Exception as ex:
+                _LOGGER.debug(f"Token refresh handler caught exception: {ex}")
+        
+        _LOGGER.debug(f"Token refresh handler stopped")
+        return True
+
 
     def _start_user_session(self) -> bool:
         """
@@ -887,6 +786,11 @@ class DabPumpsBase:
         # Once one thread is done, the next thread can then check the (new) token cookie.
         with self._login_lock:
             self._logout(context="", method=None)
+            
+            # Stop token refresh_handler
+            if self._refresh_task is not None:
+                self._refresh_task.stop()
+                self._refresh_task = None
 
 
     def _logout(self, context: str, method: DabPumpsLogin|None = None):
@@ -907,6 +811,7 @@ class DabPumpsBase:
         self._http_client.cookies.delete(name=DCONNECT_ACCESS_TOKEN_COOKIE, domain=DCONNECT_API_DOMAIN)
         self._access_token_info = DabPumpsAccessTokenInfo(
             token = None,
+            expires_in = None,
             expiry = None,
         )
 
@@ -915,6 +820,7 @@ class DabPumpsBase:
             self._http_client.cookies.delete(name=DCONNECT_REFRESH_TOKEN_COOKIE, domain=DCONNECT_API_DOMAIN)
             self._refresh_token_info = DabPumpsRefreshTokenInfo(
                 token = None,
+                expires_in = None,
                 expiry = None,
                 client_id = None,
                 client_secret = None,
