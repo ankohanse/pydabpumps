@@ -33,7 +33,7 @@ class DabPumpsDataError(DabPumpsError):
 
 class DabPumpsApiFlag(StrEnum):
     """Extra flags to pass to Api"""
-    REFRESH_HANDLER_START   = "refresh_handler_start"   # bool
+    LOGIN_HANDLER_START   = "LOGIN_HANDLER_START"   # bool
 
 class DabPumpsLogin(StrEnum):
     ACCESS_TOKEN = 'Access-Token'

@@ -116,7 +116,7 @@ async def main():
             await api.on_device_state(serial, show_device_state)
 
         # Keep the application alive
-        for t in range(8*60):
+        for t in range(60):
 
             # In addition to waiting for push statuses to arrive, you can still
             # poll for fresh statuses for all devices in this install
@@ -131,7 +131,7 @@ async def main():
             await asyncio.sleep(60)
 
     except Exception as e:
-        logger.info(f"Unexpected exception: {e}")
+        logger.exception(e)
 
     finally:
         if api:

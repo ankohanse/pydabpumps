@@ -42,11 +42,18 @@ DCONNECT_WEB_CLIENT_ID =  'DWT-Dconnect'
 DCONNECT_WEB_CLIENT_SECRET = None
 DCONNECT_WEB_REDIRECT_URI = 'https://dconnect.dabpumps.com/sso?cameFrom=/dashboard&auth_callback=1'
 
+LOGIN_REPEAT_TIMEOUT_MIN = 1 # seconds
+LOGIN_REPEAT_TIMEOUT_MAX = 15*60 # seconds
+
 # WAMP is used for push messages from the H2D servers
 WAMP_URL = 'wss://dconnect.dabpumps.com/wsapp'
 WAMP_REALM = 'realm1'
 WAMP_AUTH_METHODS = ['ticket']
 WAMP_AUTH_ID = 'iopapp'
+
+WAMP_START_TIMEOUT = 5 # seconds
+WAMP_REPEAT_TIMEOUT_MIN = 1 # seconds
+WAMP_REPEAT_TIMEOUT_MAX = 60 # seconds
 
 # Period to prevent status updates when value was recently updated
 STATUS_UPDATE_HOLD = 30 # seconds

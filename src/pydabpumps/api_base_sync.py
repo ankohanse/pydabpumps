@@ -53,6 +53,8 @@ from .const import (
     DCONNECT_WEB_CLIENT_ID,
     DCONNECT_WEB_CLIENT_SECRET,
     DCONNECT_WEB_REDIRECT_URI,
+    LOGIN_REPEAT_TIMEOUT_MIN,
+    LOGIN_REPEAT_TIMEOUT_MAX,
     DEVICE_ATTR_EXTRA,
     STATUS_UPDATE_HOLD,
     HTTPX_REQUEST_TIMEOUT,
@@ -110,10 +112,9 @@ class DabPumpsBase:
         self._refresh_token_info: DabPumpsRefreshTokenInfo = refresh_token_info or DabPumpsRefreshTokenInfo()
         self._session_info: DabPumpsSessionInfo = DabPumpsSessionInfo()
         
-        # Automatic refresh of access token
-        self._refresh_handler_start = flags.get(DabPumpsApiFlag.REFRESH_HANDLER_START, True)
-        self._refresh_task = None
-        self._refresh_schedule: float = 0
+        # Automatic refresh of access token or re-login
+        self._login_handler_start = flags.get(DabPumpsApiFlag.LOGIN_HANDLER_START, True)
+        self._login_handler_task = TaskHelper(name="Login handler", action=self.login, repeat_timeout_min=LOGIN_REPEAT_TIMEOUT_MIN, repeat_timeout_max=LOGIN_REPEAT_TIMEOUT_MAX)
 
         # Retrieved data
         self._install_map: dict[str, DabPumpsInstall] = {}              # install_id => install
@@ -220,9 +221,8 @@ class DabPumpsBase:
             self._login(test_method=test_method)
 
             # If needed, start our login_refresh_handler thread
-            if self._refresh_handler_start and self._refresh_task is None:
-                self._refresh_task = TaskHelper()
-                self._refresh_task.start(self._login_refresh_handler)
+            if self._login_handler_start and not self._login_handler_task.running:
+                self._login_handler_task.start()
 
 
     def _login(self, test_method:DabPumpsLogin=None):
@@ -277,10 +277,6 @@ class DabPumpsBase:
                 error = ex
 
                 # Clear any previous login cookies and tokens before trying the next method
-                # AJH needed?
-                #if method not in [DabPumpsLogin.ACCESS_TOKEN]:
-                #    await self._stop_user_session()
-
                 self._logout(context="login", method=method)
 
         # if we reached this point then all methods failed.
@@ -310,7 +306,9 @@ class DabPumpsBase:
         context = f"login access_token reuse"
         self._update_diagnostics(utcnow(), context, None, None, self._access_token_info)
 
-        _LOGGER.debug(f"Reuse the access-token")
+        self._login_handler_task.schedule(self._access_token_info.expiry)
+
+        #_LOGGER.debug(f"Reuse the access-token")
         return True
 
 
@@ -374,6 +372,8 @@ class DabPumpsBase:
             error = f"No tokens found in response from {request["url"]}"
             _LOGGER.debug(error)    # logged as warning after last retry
             raise DabPumpsAuthError(error)
+
+        self._login_handler_task.schedule(self._access_token_info.expiry)
 
         # The refresh of the tokens succeeded
         _LOGGER.debug(f"Refreshed the access-token; original login used method {self._login_info.login_method}")
@@ -523,6 +523,8 @@ class DabPumpsBase:
         self._login_info = DabPumpsLoginInfo(
             login_method = method,
         )
+        self._login_handler_task.schedule(self._access_token_info.expiry)
+
         _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
         return True
 
@@ -576,6 +578,8 @@ class DabPumpsBase:
         self._login_info = DabPumpsLoginInfo(
             login_method = DabPumpsLogin.DCONNECT_APP,
         )
+        self._login_handler_task.schedule(self._access_token_info.expiry)
+
         _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
         return True
 
@@ -643,36 +647,11 @@ class DabPumpsBase:
         self._login_info = DabPumpsLoginInfo(
             login_method = DabPumpsLogin.DCONNECT_WEB,
         )
+        self._login_handler_task.schedule(self._access_token_info.expiry)
+
         _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
         return True
     
-
-    def _login_refresh_handler(self) -> bool:
-        """
-        Parallel task that will refresh the access token when scheduled.
-        """
-        _LOGGER.debug(f"Token refresh handler started")
-
-        while not self._refresh_task.is_stop_requested():
-            try:
-                # Wait until access token is almost expired, or wait at least 1 minute
-                exp = self._access_token_info.expiry or utcnow()
-                now = utcnow()
-                delay = max((exp - now).total_seconds(), 60)
-
-                if self._refresh_task.wait_for_stop(timeout = delay):
-                    # Stop event detected
-                    pass
-                else:
-                    # Reuse access token, refresh it, or re-login
-                    self.login()
-
-            except Exception as ex:
-                _LOGGER.debug(f"Token refresh handler caught exception: {ex}")
-        
-        _LOGGER.debug(f"Token refresh handler stopped")
-        return True
-
 
     def _start_user_session(self) -> bool:
         """
@@ -782,15 +761,14 @@ class DabPumpsBase:
     def logout(self):
         """Logout from DAB Pumps"""
 
+        # Stop token refresh_handler
+        if self._login_handler_task.running:
+            self._login_handler_task.stop()
+
         # Only one thread at a time can check token cookie and do subsequent login or logout if needed.
         # Once one thread is done, the next thread can then check the (new) token cookie.
         with self._login_lock:
             self._logout(context="", method=None)
-            
-            # Stop token refresh_handler
-            if self._refresh_task is not None:
-                self._refresh_task.stop()
-                self._refresh_task = None
 
 
     def _logout(self, context: str, method: DabPumpsLogin|None = None):
@@ -832,6 +810,9 @@ class DabPumpsBase:
             self._login_info = DabPumpsLoginInfo(
                 login_method = None
             )
+
+        # Trigger an immediate re-login (will be cancelled if this is a real logout)
+        self._login_handler_task.schedule(utcnow())   
 
 
     def _validate_token(self, token: str|None) -> str:

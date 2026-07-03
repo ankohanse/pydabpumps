@@ -84,6 +84,9 @@ async def main():
 
         # Once the calls above have been perfomed, the calls below can be repeated periodically.
         for t in range(60):
+            # Regularly repeat the login call to make sure the access-token is renewed when needed.
+            await api.login()
+
             # Retrieve fresh statuses for all devices in this install
             await api.fetch_install_statuses(install_id)
 
@@ -113,7 +116,7 @@ async def main():
             await asyncio.sleep(60)
 
     except Exception as e:
-        logger.info(f"Unexpected exception: {e}")
+        logger.exception(e)
 
     finally:
         if api:
