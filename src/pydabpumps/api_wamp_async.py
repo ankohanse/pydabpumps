@@ -101,7 +101,12 @@ class AsyncDabPumps(AsyncDabPumpsBase):
         self._wamp_subscription_map: dict[str, WampSubscriptionDetails] = {}    # topic -> { context, request, response, callback }
 
         # Automatic re-connect to wamp_session        
-        self._wamp_reconnect_task = AsyncTaskHelper(name="Reconnect handler", action=self._wamp_reconnect_handler, repeat_timeout_min=WAMP_REPEAT_TIMEOUT_MIN, repeat_timeout_max=WAMP_REPEAT_TIMEOUT_MAX)
+        self._wamp_reconnect_task = AsyncTaskHelper(
+            name="Reconnect handler", 
+            action=self._wamp_reconnect_handler, 
+            repeat_timeout_min=WAMP_REPEAT_TIMEOUT_MIN, 
+            repeat_timeout_max=WAMP_REPEAT_TIMEOUT_MAX
+        )
 
 
     async def login(self, test_method:DabPumpsLogin=None):
@@ -192,8 +197,8 @@ class AsyncDabPumps(AsyncDabPumpsBase):
             await self._wamp_runner.run(make=self._wamp_session_factory, start_loop=False)
             self._wamp_runner_started.set()
 
-            # Schedule a check of session start success
-            await self._wamp_reconnect_task.schedule(utcnow()+timedelta(seconds=WAMP_START_TIMEOUT))
+            # Schedule repeated checks of session start success
+            await self._wamp_reconnect_task.schedule(None)
             return True
 
         except Exception as e:

@@ -811,8 +811,8 @@ class DabPumpsBase:
                 login_method = None
             )
 
-        # Trigger an immediate re-login (will be cancelled if this is a real logout)
-        self._login_handler_task.schedule(utcnow())   
+        # Trigger repeated re-login attempts (will be cancelled if this is a real logout)
+        self._login_handler_task.schedule(None)   
 
 
     def _validate_token(self, token: str|None) -> str:

@@ -43,7 +43,7 @@ DCONNECT_WEB_CLIENT_SECRET = None
 DCONNECT_WEB_REDIRECT_URI = 'https://dconnect.dabpumps.com/sso?cameFrom=/dashboard&auth_callback=1'
 
 LOGIN_REPEAT_TIMEOUT_MIN = 1 # seconds
-LOGIN_REPEAT_TIMEOUT_MAX = 15*60 # seconds
+LOGIN_REPEAT_TIMEOUT_MAX = 5*60 # seconds
 
 # WAMP is used for push messages from the H2D servers
 WAMP_URL = 'wss://dconnect.dabpumps.com/wsapp'

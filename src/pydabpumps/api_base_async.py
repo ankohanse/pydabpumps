@@ -111,7 +111,12 @@ class AsyncDabPumpsBase:
         
         # Automatic refresh of access token or re-login
         self._login_handler_start = flags.get(DabPumpsApiFlag.LOGIN_HANDLER_START, True)
-        self._login_handler_task = AsyncTaskHelper(name="Login handler", action=self.login, repeat_timeout_min=LOGIN_REPEAT_TIMEOUT_MIN, repeat_timeout_max=LOGIN_REPEAT_TIMEOUT_MAX)
+        self._login_handler_task = AsyncTaskHelper(
+            name="Login handler", 
+            action=self.login, 
+            repeat_timeout_min=LOGIN_REPEAT_TIMEOUT_MIN, 
+            repeat_timeout_max=LOGIN_REPEAT_TIMEOUT_MAX
+        )
 
         # Retrieved data
         self._install_map: dict[str, DabPumpsInstall] = {}              # install_id => install
@@ -660,6 +665,7 @@ class AsyncDabPumpsBase:
 
         # User session is not supported via DCONNECT_WEB login methods
         match self._login_info.login_method:
+            case None: return False
             case DabPumpsLogin.H2D_APP:      self._session_info.dabcs_auth = H2D_APP_DABCS_AUTH
             case DabPumpsLogin.DABLIVE_APP:  self._session_info.dabcs_auth = DABLIVE_APP_DABCS_AUTH
             case DabPumpsLogin.DCONNECT_APP: self._session_info.dabcs_auth = DCONNECT_APP_DABCS_AUTH
@@ -726,8 +732,8 @@ class AsyncDabPumpsBase:
             # No current session
             return True
 
-        # User session works with all login methods, except DCONNECT_WEB
-        if self._login_info.login_method in [DabPumpsLogin.DCONNECT_WEB]:
+        # User session works with all login methods, except DCONNECT_WEB or when not logged in
+        if self._login_info.login_method in [None, DabPumpsLogin.DCONNECT_WEB]:
             return False
         
         try:
@@ -808,8 +814,8 @@ class AsyncDabPumpsBase:
                 login_method = None
             )
 
-        # Trigger an immediate re-login (will be cancelled if this is a real logout)
-        await self._login_handler_task.schedule(utcnow())   
+        # Trigger repeated re-login attempts (will be cancelled if this is a real logout)
+        await self._login_handler_task.schedule(None)   
 
 
     def _validate_token(self, token: str|None) -> str:

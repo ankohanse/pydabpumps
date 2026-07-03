@@ -49,9 +49,19 @@ class AsyncTaskHelper:
             pass
 
     async def schedule(self, schedule: datetime):
-        self._scheduled_timeout = schedule
-        self._repeat_timeout = 0
-        self._wakeup_event.set()
+        """
+        Start a scheduled wait.
+        Or cancel a scheduled wait and start repeated wait
+        """
+        if schedule is not None or self._scheduled_timeout is not None:
+            # Set a new schedule, or
+            # Cancel current scheduled timeout and start repeated timeout
+            self._scheduled_timeout = schedule
+            self._repeat_timeout = 0
+            self._wakeup_event.set()
+        else:
+            # Continue current repeated timeout
+            pass
         
     async def _loop(self):
         _LOGGER.debug(f"{self._name} started")
@@ -71,16 +81,21 @@ class AsyncTaskHelper:
             try:
                 await asyncio.wait_for(self._wakeup_event.wait(), timeout)
 
-                # Stop or reschedule detected
+                # wakeup event detected, triggered by Stop or reschedule
                 continue
 
             except asyncio.TimeoutError:
+                # Scheduled or repeat timout detected.
                 # Clear schedule, next timeout will be after repeat_timeout seconds.
                 # Unless the action sets a new schedule.
                 self._scheduled_timeout = None
 
                 # Call the action
-                await self._action()
+                try:
+                    await self._action()
+
+                except Exception as e:
+                    _LOGGER.debug(f"{self._name} caught exception: {e} while performing action")
 
             except Exception as ex:
                 _LOGGER.debug(f"{self._name} caught exception: {ex}")
@@ -125,9 +140,19 @@ class TaskHelper:
             self._task = None
 
     def schedule(self, schedule: datetime):
-        self._scheduled_timeout = schedule
-        self._repeat_timeout = 0
-        self._wakeup_event.set()
+        """
+        Start a scheduled wait.
+        Or cancel a scheduled wait and start repeated wait
+        """
+        if schedule is not None or self._scheduled_timeout is not None:
+            # Set a new schedule, or
+            # Cancel current scheduled timeout and start repeated timeout
+            self._scheduled_timeout = schedule
+            self._repeat_timeout = 0
+            self._wakeup_event.set()
+        else:
+            # Continue current repeated timeout
+            pass        
 
     def _loop(self):
         _LOGGER.debug(f"{self._name} started")
@@ -145,15 +170,20 @@ class TaskHelper:
                 timeout = self._repeat_timeout
 
             if self._wakeup_event.wait(timeout):
-                # Stop or reschedule detected
+                # Wakeup-event detected, triggered by Stop or reschedule
                 continue
             else:
+                # Scheduled or repeat timout detected.
                 # Clear schedule, next timeout will be after repeat_timeout seconds.
                 # Unless the action sets a new schedule.
                 self._scheduled_timeout = None
 
                 # Call the action
-                self._action()
+                try:
+                    self._action()
+
+                except Exception as e:
+                    _LOGGER.debug(f"{self._name} caught exception: {e} while performing action")
 
         _LOGGER.debug(f"{self._name} stopped")
         return True
