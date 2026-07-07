@@ -390,7 +390,7 @@ async def test_push_data(name, method, loop, exp_except, request):
         assert context.api._session_info.dabcs_device is not None            
         assert context.api._session_info.key is not None
         assert context.api._session_info.wstoken is not None
-        assert context.api._wamp_runner_started.is_set()
+        assert context.api._wamp_component_started.is_set()
         assert context.api._wamp_session_started.is_set()
             
         # Do the required iterations

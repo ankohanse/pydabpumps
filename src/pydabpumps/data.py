@@ -2,7 +2,7 @@ from datetime import datetime
 import logging
 import secrets
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import ClassVar
 
@@ -210,6 +210,9 @@ class DabPumpsAccessTokenInfo:
         if self.expiry and isinstance(self.expiry, str):
             self.expiry = datetime.fromisoformat(self.expiry)
 
+    def is_valid(self):
+        return self.token is not None and self.expiry is not None and utcnow < self.expiry
+
 
 @dataclass
 class DabPumpsRefreshTokenInfo:
@@ -234,6 +237,9 @@ class DabPumpsSessionInfo:
     wstoken: str = None
     dabcs_auth: str = None     
     dabcs_device: ClassVar[str] = secrets.token_hex(8)  # Static class variable, will never change once assigned
+
+    # for diagnostics
+    leave_reasons: set[str] = field(default_factory=set)
 
 
 @dataclass
