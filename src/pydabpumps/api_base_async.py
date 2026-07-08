@@ -112,7 +112,7 @@ class AsyncDabPumpsBase:
         # Automatic refresh of access token or re-login
         self._login_handler_start = flags.get(DabPumpsApiFlag.LOGIN_HANDLER_START, True)
         self._login_handler_task = AsyncTaskHelper(
-            name="Login handler", 
+            name="Relogin handler", 
             action=self.login, 
             repeat_timeout_min=LOGIN_REPEAT_TIMEOUT_MIN, 
             repeat_timeout_max=LOGIN_REPEAT_TIMEOUT_MAX
@@ -663,6 +663,10 @@ class AsyncDabPumpsBase:
             # Already have the session key and websocket token
             return True
 
+        # Check we have a valid access_token, otherwise we cannot do the call to start the user session
+        if not self._access_token_info.is_valid:
+            return False
+        
         # User session is not supported via DCONNECT_WEB login methods
         match self._login_info.login_method:
             case None: return False
@@ -732,6 +736,10 @@ class AsyncDabPumpsBase:
             # No current session
             return True
 
+        # Check we have a valid access_token, otherwise we cannot do the call to stop the user session
+        if not self._access_token_info.is_valid:
+            return False
+        
         # User session works with all login methods, except DCONNECT_WEB or when not logged in
         if self._login_info.login_method in [None, DabPumpsLogin.DCONNECT_WEB]:
             return False
@@ -1708,6 +1716,7 @@ class AsyncDabPumpsBase:
                 "login_info": self._login_info,
                 "access_token_info": self._access_token_info,
                 "refresh_token_info": self._refresh_token_info,
+                "session_info": self._session_info,
 
                 "string_map_lang": self.string_map_lang,
             }

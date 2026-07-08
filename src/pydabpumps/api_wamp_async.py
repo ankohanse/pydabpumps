@@ -20,8 +20,9 @@ import logging
 import re
 import time
 
-from autobahn.asyncio.wamp import ApplicationRunner, ApplicationSession
-from autobahn.wamp import ComponentConfig, EventDetails, SessionDetails, SubscribeOptions
+from autobahn.asyncio.component import Component as WampComponent
+from autobahn.asyncio.wamp import ApplicationSession
+from autobahn.wamp import CloseDetails, ComponentConfig, EventDetails, SessionDetails, SubscribeOptions
 from autobahn.wamp.types import Challenge, Subscription
 
 from dataclasses import dataclass, replace
@@ -71,6 +72,11 @@ class WampMethod(StrEnum):
 class WampSubscriptionType(StrEnum):
     DEVICE_STATE = 'DeviceState'
 
+class WampCloseReason(StrEnum):
+    DABPUMPS_NO_SUCH_USER = 'com.dabpumps.no_such_user'
+    CLOSE_NORMAL = CloseDetails.REASON_DEFAULT # 'wamp.close.normal',
+    CLOSE_TRANSPORT_LOST = CloseDetails.REASON_TRANSPORT_LOST  # 'wamp.close.transport_lost'
+
 
 @dataclass
 class WampSubscriptionDetails:
@@ -92,9 +98,14 @@ class AsyncDabPumps(AsyncDabPumpsBase):
             refresh_token_info = refresh_token_info
         )
         
-        # Wamp session
-        self._wamp_runner = ApplicationRunner(url = WAMP_URL, realm = WAMP_REALM)
-        self._wamp_runner_started = asyncio.Event()
+        # Wamp component and session
+        self._wamp_component = WampComponent(
+            transports = WAMP_URL,
+            realm = WAMP_REALM,
+            session_factory = self._wamp_session_factory,
+        )
+        self._wamp_component_task: asyncio.Future = None
+        self._wamp_component_started = asyncio.Event()
         self._wamp_session: ApplicationSession = None
         self._wamp_session_started = asyncio.Event()
         self._wamp_session_start_ts: datetime = utcmin()
@@ -136,15 +147,6 @@ class AsyncDabPumps(AsyncDabPumpsBase):
         await super().close()
 
 
-    async def _wamp_reconnect_handler(self):
-        """
-        Check if the Wamp session needs reconnecting
-        """        
-        if self._wamp_subscription_map:
-            await self._start_user_session()
-            await self._start_wamp_session()
-
-
     async def on_device_state(self, serial: str, callback) -> bool:
         """
         Subscribe to status changes for a device.
@@ -177,6 +179,15 @@ class AsyncDabPumps(AsyncDabPumpsBase):
         await self._wamp_reconnect_task.schedule(utcnow())
 
 
+    async def _wamp_reconnect_handler(self):
+        """
+        Check if the Wamp session needs reconnecting
+        """        
+        if self._wamp_subscription_map:
+            await self._start_user_session()
+            await self._start_wamp_session()
+
+
     async def _start_wamp_session(self) -> bool:
         """
         Start Wamp/push handler
@@ -184,8 +195,8 @@ class AsyncDabPumps(AsyncDabPumpsBase):
         if not self._session_info.wstoken:
             return False    # requirements not met
 
-        # Check if both runner and session are already started
-        if self._wamp_runner_started.is_set():
+        # Check if component and session are already started
+        if self._wamp_component_started.is_set():
             if self._wamp_session_started.is_set():
                 return True     # Already started
             
@@ -194,8 +205,9 @@ class AsyncDabPumps(AsyncDabPumpsBase):
             
         # Not started yet, or session start failed
         try:
-            await self._wamp_runner.run(make=self._wamp_session_factory, start_loop=False)
-            self._wamp_runner_started.set()
+            self._wamp_component_task = self._wamp_component.start(loop=asyncio.get_event_loop())
+            self._wamp_component_task.add_done_callback(self._wamp_done_handler)
+            self._wamp_component_started.set()
 
             # Schedule repeated checks of session start success
             await self._wamp_reconnect_task.schedule(None)
@@ -210,15 +222,11 @@ class AsyncDabPumps(AsyncDabPumpsBase):
         """
         Stop Wamp/push handler
         """
-        if self._wamp_session_started.is_set():
-            self._wamp_session.leave()
-            self._wamp_session.disconnect()
-            self._wamp_session_started.clear()
+        if self._wamp_component_started.is_set():
+            self._wamp_component.stop()
+            self._wamp_component_started.clear()
 
-        if self._wamp_runner_started.is_set():
-            # Don't call stop(); it throws a 'not implemented' exception
-            # self._wamp_runner.stop()
-            self._wamp_runner_started.clear()
+        # Component will take care of stopping the session
 
 
     def _wamp_session_factory(self, config):
@@ -361,15 +369,30 @@ class AsyncDabPumps(AsyncDabPumpsBase):
                 return
 
 
-    async def _wamp_leave_handler(self):
+    async def _wamp_join_handler(self):
+        """
+        Handle a wamp join
+        """
+        self._wamp_session_started.set()
+
+        # Resubmit any subscribe requests from previous sessions
+        await self._wamp_subscribe_resubmit()
+
+        
+    async def _wamp_leave_handler(self, reason:str=None):
         """
         handle wamp leave/disconnect received from the DAB Pumps servers
         """          
         self._wamp_session_start_ts = utcmin()
         self._wamp_session_started.clear()
-        self._wamp_runner_started.clear()
-        self._session_info.wstoken = None
-        
+
+        # If needed, trigger restart of user session
+        if reason in [WampCloseReason.DABPUMPS_NO_SUCH_USER]:
+            self._session_info.wstoken = None
+
+        # Diagnostics
+        self._session_info.leave_reasons.add(reason)
+
         # Flag all previous subscribe requests as cancelled so they can be resubmitted once we rejoin
         await self._wamp_subscribe_cancelled()
 
@@ -377,6 +400,22 @@ class AsyncDabPumps(AsyncDabPumpsBase):
         await self._wamp_reconnect_task.schedule(utcnow())
 
 
+    def _wamp_done_handler(self, task:asyncio.Future=None):
+        """
+        handle wamp component done.
+        Note: used as param in asyncio.add_done_callback, which expects a sync function def!
+        """ 
+        _LOGGER.debug(f"Wamp component done")
+        try:
+            result = task.result()
+        except:
+            pass
+        finally:
+            self._wamp_component_started.clear()
+        
+        # Make sure we cleanup the session in case it was not already done
+        asyncio.create_task(self._wamp_leave_handler())
+        
 
 class AsyncDabPumpsWampSession(ApplicationSession):
     """
@@ -408,7 +447,7 @@ class AsyncDabPumpsWampSession(ApplicationSession):
         _LOGGER.debug(f"Wamp session challenged")
 
         match challenge.method:
-            case 'ticket': return self._api._session_info.wstoken
+            case 'ticket': return self._api._session_info.wstoken or ""
             case _: raise DabPumpsAuthError(f"Unexpected method '{challenge.method} in Challenge received from Wamp server")
 
 
@@ -424,10 +463,7 @@ class AsyncDabPumpsWampSession(ApplicationSession):
         Called when the session is ready for subscribe or procedure call requests to the remote Wamp router
         """
         _LOGGER.debug(f"Wamp session joined")
-        self._api._wamp_session_started.set()
-
-        # Resubmit any subscribe requests from previous sessions
-        await self._api._wamp_subscribe_resubmit()
+        await self._api._wamp_join_handler()
 
 
     async def onEvent(self, data, details:EventDetails=None):
@@ -438,12 +474,12 @@ class AsyncDabPumpsWampSession(ApplicationSession):
             await self._api._wamp_event_handler(details.topic, data)
                          
 
-    async def onLeave(self, details):
+    async def onLeave(self, details:CloseDetails):
         """
         Handle a gracious leave from the session by the remote Wamp router
         """
-        _LOGGER.debug(f"Wamp session leave")
-        await self._api._wamp_leave_handler()
+        _LOGGER.debug(f"Wamp session leave ({details.reason})")
+        await self._api._wamp_leave_handler(details.reason)
 
                          
     async def onDisconnect(self):

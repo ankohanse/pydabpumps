@@ -114,7 +114,12 @@ class DabPumpsBase:
         
         # Automatic refresh of access token or re-login
         self._login_handler_start = flags.get(DabPumpsApiFlag.LOGIN_HANDLER_START, True)
-        self._login_handler_task = TaskHelper(name="Login handler", action=self.login, repeat_timeout_min=LOGIN_REPEAT_TIMEOUT_MIN, repeat_timeout_max=LOGIN_REPEAT_TIMEOUT_MAX)
+        self._login_handler_task = TaskHelper(
+            name="Relogin handler", 
+            action=self.login, 
+            repeat_timeout_min=LOGIN_REPEAT_TIMEOUT_MIN, 
+            repeat_timeout_max=LOGIN_REPEAT_TIMEOUT_MAX
+        )
 
         # Retrieved data
         self._install_map: dict[str, DabPumpsInstall] = {}              # install_id => install
@@ -661,8 +666,13 @@ class DabPumpsBase:
             # Already have the session key and websocket token
             return True
 
+        # Check we have a valid access_token, otherwise we cannot do the call to start the user session
+        if not self._access_token_info.is_valid:
+            return False
+        
         # User session is not supported via DCONNECT_WEB login methods
         match self._login_info.login_method:
+            case None: return False
             case DabPumpsLogin.H2D_APP:      self._session_info.dabcs_auth = H2D_APP_DABCS_AUTH
             case DabPumpsLogin.DABLIVE_APP:  self._session_info.dabcs_auth = DABLIVE_APP_DABCS_AUTH
             case DabPumpsLogin.DCONNECT_APP: self._session_info.dabcs_auth = DCONNECT_APP_DABCS_AUTH
@@ -729,8 +739,12 @@ class DabPumpsBase:
             # No current session
             return True
 
-        # User session works with all login methods, except DCONNECT_WEB
-        if self._login_info.login_method in [DabPumpsLogin.DCONNECT_WEB]:
+        # Check we have a valid access_token, otherwise we cannot do the call to stop the user session
+        if not self._access_token_info.is_valid:
+            return False
+        
+        # User session works with all login methods, except DCONNECT_WEB or when not logged in
+        if self._login_info.login_method in [None, DabPumpsLogin.DCONNECT_WEB]:
             return False
         
         try:
@@ -1705,6 +1719,7 @@ class DabPumpsBase:
                 "login_info": self._login_info,
                 "access_token_info": self._access_token_info,
                 "refresh_token_info": self._refresh_token_info,
+                "session_info": self._session_info,
 
                 "string_map_lang": self.string_map_lang,
             }
