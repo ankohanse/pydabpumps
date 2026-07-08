@@ -416,7 +416,7 @@ class AsyncDabPumps:
         openid_client_id = H2D_APP_CLIENT_ID
         openid_client_secret = H2D_APP_CLIENT_SECRET
 
-        # Step 1: get login url
+        # Step 1: get login url, may immediately return with openid-code
         context = f"login H2D_app openid-connect auth"
         request = {
             "method": "GET",
@@ -430,40 +430,52 @@ class AsyncDabPumps:
                 'scope': 'openid profile email phone',
                 'redirect_uri': H2D_APP_REDIRECT_URI,
             },
-        }
-
-        _LOGGER.debug(f"Try login with H2D; retrieve auth page via {request["method"]}  {request["url"]}")
-        text = await self._send_request(context, request)
-        
-        match = re.search(r'action\s?=\s?\"(.*?)\"', text, re.MULTILINE)
-        if not match:    
-            error = f"Unexpected response while retrieving openid-connect from {request["url"]}: {text}"
-            _LOGGER.debug(error)    # logged as warning after last retry
-            raise DabPumpsAuthError(error)
-        
-        # Step 2: Authenticate
-        context = f"login H2D_app authenticate"
-        request = {
-            "method": "POST",
-            "url": match.group(1).replace('&amp;', '&'),
-            "headers": {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            "data": {
-                'username': self._username, 
-                'password': self._password,
-            },
             "flags": {
-                'redirects': False,
+                    'redirects': False,
             }
         }
+
+        _LOGGER.debug(f"Try login with H2D; connect via {request["method"]}  {request["url"]}")
+        text = await self._send_request(context, request)
         
-        _LOGGER.debug(f"Try login with H2D; authenticate '{self._username}' via {request["method"]} {request["url"]}")
-        location_str = await self._send_request(context, request)
+        if not text.startswith(H2D_APP_REDIRECT_URI):
+            # We received a login page containing a form
+            match = re.search(r'action\s?=\s?\"(.*?)\"', text, re.MULTILINE)
+            if not match:    
+                error = f"Unexpected response while retrieving openid-connect from {request["url"]}: {text}"
+                _LOGGER.debug(error)    # logged as warning after last retry
+                raise DabPumpsAuthError(error)
+            
+            auth_url = match.group(1).replace('&amp;', '&')
+        else:
+            # We received a location header containing the openid-code
+            auth_url = None
+            location_str = text
+        
+        # Step 2: Authenticate (if still needed)
+        if auth_url is not None:
+            context = f"login H2D_app authenticate"
+            request = {
+                "method": "POST",
+                "url": auth_url,
+                "headers": {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                "data": {
+                    'username': self._username, 
+                    'password': self._password,
+                },
+                "flags": {
+                    'redirects': False,
+                }
+            }
+            
+            _LOGGER.debug(f"Try login with H2D; authenticate '{self._username}' via {request["method"]} {request["url"]}")
+            location_str = await self._send_request(context, request)
 
         # Returned value is a redirect location containing state and session_state
-        if not location_str.startswith(H2D_APP_REDIRECT_URI) or not "code=" in text:
-            error = f"Unexpected response while authenticating from {request["url"]}: {text}"
+        if not location_str.startswith(H2D_APP_REDIRECT_URI) or not "code=" in location_str:
+            error = f"Unexpected response while authenticating from {request["url"]}: {location_str}"
             _LOGGER.debug(error)    # logged as warning after last retry
             raise DabPumpsAuthError(error)
         
