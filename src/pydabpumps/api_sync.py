@@ -1578,7 +1578,7 @@ class DabPumps:
             request["headers"].update(self._login_info.extra_headers)
 
         # Add some default headers if not already set via extra_headers
-        request["headers"].setdefault('User-Agent', 'python-requests/2.20.0')
+        request["headers"].setdefault('User-Agent', 'DabIopApp/1.8.6')
         request["headers"].setdefault('Cache-Control', 'no-store, no-cache, max-age=0')
         request["headers"].setdefault('Connection', 'close')
 
