@@ -438,37 +438,46 @@ class DabPumpsBase:
             }
         }
 
-        _LOGGER.debug(f"Try login with {method}; retrieve auth page")
+        _LOGGER.debug(f"Try login with {method}; connect")
         text = self._send_request(context, request)
         
-        match = re.search(r'action\s?=\s?\"(.*?)\"', text, re.MULTILINE)
-        if not match:    
-            error = f"Unexpected response while retrieving openid-connect from {request["url"]}: {text}"
-            _LOGGER.debug(error)    # logged as warning after last retry
-            raise DabPumpsAuthError(error)
+        if not text.startswith(openid_redirect_uri):
+            # We received a login page containing a form
+            match = re.search(r'action\s?=\s?\"(.*?)\"', text, re.MULTILINE)
+            if not match:    
+                error = f"Unexpected response while retrieving openid-connect from {request["url"]}: {text}"
+                _LOGGER.debug(error)    # logged as warning after last retry
+                raise DabPumpsAuthError(error)
+            
+            auth_url = match.group(1).replace('&amp;', '&')
+        else:
+            # We received a location header containing the openid-code
+            auth_url = None
+            location_str = text
         
-        # Step 2: Authenticate
-        context = f"login {method} authenticate"
-        request = {
-            "method": "POST",
-            "url": match.group(1).replace('&amp;', '&'),
-            "headers": {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            "data": {
-                'username': self._username, 
-                'password': self._password,
-            },
-            "flags": {
-                'redirects': False,
+        # Step 2: Authenticate (if still needed)
+        if auth_url is not None:
+            context = f"login {method} authenticate"
+            request = {
+                "method": "POST",
+                "url": auth_url,
+                "headers": {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                "data": {
+                    'username': self._username, 
+                    'password': self._password,
+                },
+                "flags": {
+                    'redirects': False,
+                }
             }
-        }
-        
-        _LOGGER.debug(f"Try login with {method}; authenticate '{self._username}'")
-        location_str = self._send_request(context, request)
+            
+            _LOGGER.debug(f"Try login with {method}; authenticate '{self._username}'")
+            location_str = self._send_request(context, request)
 
         # Returned value is a redirect location containing state and session_state
-        if not location_str.startswith(openid_redirect_uri) or not "code=" in text:
+        if not location_str.startswith(openid_redirect_uri) or not "code=" in location_str:
             error = f"Unexpected response while authenticating from {request["url"]}: {text}"
             _LOGGER.debug(error)    # logged as warning after last retry
             raise DabPumpsAuthError(error)
@@ -500,7 +509,7 @@ class DabPumpsBase:
             }
         }
         
-        _LOGGER.debug(f"Try login with {method}; retrieve tokens")
+        _LOGGER.debug(f"Try login with {method}; tokens")
         result = self._send_request(context, request)
         
         default_access_expires_in = DABCS_ACCESS_TOKEN_VALID if self.login_info.fetch_method==DabPumpsFetch.DABCS else DCONNECT_ACCESS_TOKEN_VALID
@@ -1619,7 +1628,7 @@ class DabPumpsBase:
             request["headers"].update(self._login_info.extra_headers)
 
         # Add some default headers if not already set via extra_headers
-        request["headers"].setdefault('User-Agent', 'python-requests/2.20.0')
+        request["headers"].setdefault('User-Agent', 'DabIopApp/1.8.6')
         request["headers"].setdefault('Cache-Control', 'no-store, no-cache, max-age=0')
         request["headers"].setdefault('Connection', 'close')
 
