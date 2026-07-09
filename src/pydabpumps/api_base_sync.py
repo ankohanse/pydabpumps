@@ -870,7 +870,9 @@ class DabPumpsBase:
         match self._login_info.fetch_method:
             case DabPumpsFetch.DABCS:    url = DABCS_API_URL + '/mobile/v1/installations?include=current_user_subscription'
             case DabPumpsFetch.DCONNECT: url = DCONNECT_API_URL + '/api/v1/installation' # or DABPUMPS_API_URL + '/getInstallationList'
-
+            case _: 
+                return # not logged in
+            
         context = f"installations {self._username.lower()}"
         request = {
             "method": "GET",
@@ -968,6 +970,9 @@ class DabPumpsBase:
                 # Needs to retrieve data per device
                 raw = None
 
+            case _: 
+                return # not logged in
+
         for serial in [ d.serial for d in self._device_map.values() if d.install_id==install_id ]:
             self._fetch_device_state(serial, raw_install_data=raw)
         
@@ -979,6 +984,8 @@ class DabPumpsBase:
         match self._login_info.fetch_method:
             case DabPumpsFetch.DABCS:    url = DABCS_API_URL + f"/mobile/v1/installations/{install_id}/dums?include_configuration=true"
             case DabPumpsFetch.DCONNECT: url = DCONNECT_API_URL + f"/api/v1/installation/{install_id}" # or DABPUMPS_API_URL + f"/getInstallation/{install_id}"
+            case _: 
+                return # not logged in
 
         context = f"installation {install_id}"
         request = {
@@ -1100,6 +1107,9 @@ class DabPumpsBase:
                 conf = raw
                 conf_id = None
 
+            case _: 
+                return # not logged in
+
         # Process the resulting raw data
         conf_id = conf_id or conf.get('configuration_id') or ''
         conf_name = conf.get('name') or conf.get('ProductName') or f"config {conf_id}"
@@ -1206,6 +1216,9 @@ class DabPumpsBase:
                 lastrecv = raw.get('lastreceived') or ""
                 status = raw.get('status') or "{}" # string!
                 values = json.loads(status)
+
+            case _: 
+                return # not logged in
 
         # Process the resulting raw data
         state = self._parse_device_state(serial, statusts, lastrecv, values)
@@ -1345,7 +1358,10 @@ class DabPumpsBase:
         match self._login_info.fetch_method:
             case DabPumpsFetch.DABCS: url = DABCS_API_URL + f"/mobile/v1/dums/{serial}/setparam?skipLogging=false"
             case DabPumpsFetch.DCONNECT: url = DCONNECT_API_URL + f"/dum/{serial}"
-        
+            case _: 
+                _LOGGER.warning(f"To change device status you need to be logged in")
+                return False  # not logged in
+     
         request = {
             "method": "POST",
             "url": url,
@@ -1427,7 +1443,10 @@ class DabPumpsBase:
                 }
                 _LOGGER.debug(f"Add install role")
                 raw = self._send_request(context, request)
-        
+
+            case _: 
+                return # not logged in
+
         # If no exception was thrown then the operation was successfull
         return True
 
@@ -1659,7 +1678,7 @@ class DabPumpsBase:
                 response["text"] = rsp.text
             
         except Exception as ex:
-            error = f"Request failed: exception '{str(ex)}' while trying to reach {request["url"]}"
+            error = f"Request failed: exception '{ex}' while trying to reach {request["url"]}"
             _LOGGER.debug(error)
 
             if flags_authorize:
