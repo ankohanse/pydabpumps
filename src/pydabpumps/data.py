@@ -8,10 +8,14 @@ from typing import ClassVar
 
 from .const import (
     DABCS_API_DOMAIN,
-    DCONNECT_API_DOMAIN,
-    H2D_APP_DABCS_AUTH,
     DABLIVE_APP_DABCS_AUTH,
+    DABLIVE_APP_USER_AGENT,
+    DCONNECT_API_DOMAIN,
+    DCONNECT_APP_DABCS_AUTH,
     DCONNECT_APP_USER_AGENT,
+    DCONNECT_WEB_DABCS_AUTH,
+    H2D_APP_DABCS_AUTH,
+    H2D_APP_USER_AGENT,
     utcnow,
 )
 
@@ -174,6 +178,8 @@ class DabPumpsDeviceState:
 class DabPumpsLoginInfo:
     login_method: DabPumpsLogin = None
 
+    _dabcs_device: ClassVar[str] = secrets.token_hex(8)  # Static class variable, never to be changed after init
+
     @property
     def fetch_method(self) -> DabPumpsFetch:
         match self.login_method:
@@ -191,9 +197,26 @@ class DabPumpsLoginInfo:
     @property
     def extra_headers(self) -> dict[str,str]:
         match self.login_method:
-            case None:                       return None
+            case None:                       return {}
+            case DabPumpsLogin.H2D_APP:      return { 'User-Agent': H2D_APP_USER_AGENT }
+            case DabPumpsLogin.DABLIVE_APP:  return { 'User-Agent': DABLIVE_APP_USER_AGENT }
+            case DabPumpsLogin.DCONNECT_APP: return { "User-Agent": DCONNECT_APP_USER_AGENT }
             case DabPumpsLogin.DCONNECT_WEB: return { "User-Agent": DCONNECT_APP_USER_AGENT }
             case _:                          return {}
+
+    @property
+    def dabcs_auth(self) -> str:
+        match self.login_method:
+            case None:                       return None
+            case DabPumpsLogin.H2D_APP:      return H2D_APP_DABCS_AUTH
+            case DabPumpsLogin.DABLIVE_APP:  return DABLIVE_APP_DABCS_AUTH
+            case DabPumpsLogin.DCONNECT_APP: return DCONNECT_APP_DABCS_AUTH
+            case DabPumpsLogin.DCONNECT_WEB: return DCONNECT_WEB_DABCS_AUTH
+            case _:                          return None
+
+    @property
+    def dabcs_device(self) -> str:
+        return self._dabcs_device
 
 
 @dataclass
@@ -211,7 +234,7 @@ class DabPumpsAccessTokenInfo:
             self.expiry = datetime.fromisoformat(self.expiry)
 
     def is_valid(self):
-        return self.token is not None and self.expiry is not None and utcnow < self.expiry
+        return self.token is not None and self.expiry is not None and utcnow() < self.expiry
 
 
 @dataclass
@@ -235,8 +258,6 @@ class DabPumpsRefreshTokenInfo:
 class DabPumpsSessionInfo:
     key: str = None
     wstoken: str = None
-    dabcs_auth: str = None     
-    dabcs_device: ClassVar[str] = secrets.token_hex(8)  # Static class variable, will never change once assigned
 
     # for diagnostics
     leave_reasons: set[str] = field(default_factory=set)

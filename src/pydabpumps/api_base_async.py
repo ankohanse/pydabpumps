@@ -1,33 +1,31 @@
 """api_base.py: DabPumps API for DAB Pumps integration."""
 
 import base64
-import copy
 import hashlib
 import jwt
 import math
 import os
-import warnings
 import asyncio
 import httpx
 import json
 import logging
 import re
-import time
 
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
-from enum import Enum, StrEnum
-from typing import Any
+from typing import Any, List
 from urllib.parse import urlparse, parse_qs
 from uuid import UUID
 
 
 from .const import (
+    DABLIVE_APP_USER_AGENT,
     DABSSO_API_URL,
     DCONNECT_API_URL,
     DCONNECT_API_DOMAIN,
     DCONNECT_ACCESS_TOKEN_COOKIE,
     DCONNECT_ACCESS_TOKEN_VALID,
+    DCONNECT_APP_USER_AGENT,
     DCONNECT_REFRESH_TOKEN_COOKIE,
     DCONNECT_REFRESH_TOKEN_VALID,
     DABCS_INIT_URL,
@@ -51,6 +49,7 @@ from .const import (
     DCONNECT_WEB_CLIENT_ID,
     DCONNECT_WEB_CLIENT_SECRET,
     DCONNECT_WEB_REDIRECT_URI,
+    H2D_APP_USER_AGENT,
     LOGIN_REPEAT_TIMEOUT_MIN,
     LOGIN_REPEAT_TIMEOUT_MAX,
     DEVICE_ATTR_EXTRA,
@@ -211,7 +210,7 @@ class AsyncDabPumpsBase:
             self._http_client = None
 
 
-    async def login(self, test_method:DabPumpsLogin=None):
+    async def login(self, test_method:DabPumpsLogin|List[DabPumpsLogin]=None):
         """
         Login to DAB Pumps by trying each of the possible login methods.
         Guards for calls from multiple threads.
@@ -227,7 +226,7 @@ class AsyncDabPumpsBase:
                 await self._login_handler_task.start()
 
 
-    async def _login(self, test_method:DabPumpsLogin=None):
+    async def _login(self, test_method:DabPumpsLogin|List[DabPumpsLogin]=None):
         """Login to DAB Pumps by trying each of the possible login methods"""        
 
         # We have four possible login methods that all seem to work for both DConnect (non-expired) and for DAB Live
@@ -238,11 +237,13 @@ class AsyncDabPumpsBase:
         # For testing we can force to use a specific method
         error = None
         
-        if test_method is None:
+        if isinstance(test_method, list):
+            methods = test_method
+        elif isinstance(test_method, str):
+            methods = [test_method]
+        else:
             methods = [DabPumpsLogin.ACCESS_TOKEN, DabPumpsLogin.REFRESH_TOKEN, self._login_info.login_method, DabPumpsLogin.H2D_APP, DabPumpsLogin.DABLIVE_APP, DabPumpsLogin.DCONNECT_APP]  
             # DabPumpsLogin.DCONNECT_WEB removed because it does not support Wamp/Push data
-        else:
-            methods = [test_method]
             
         for method in methods:
             try:
@@ -347,6 +348,9 @@ class AsyncDabPumpsBase:
                 'client_id': self._refresh_token_info.client_id or "",
                 'client_secret': self._refresh_token_info.client_secret or "",
             },
+            "flags": {
+                'authorize': False,
+            },
         }
         
         _LOGGER.debug(f"Try refresh the access-token")
@@ -364,7 +368,7 @@ class AsyncDabPumpsBase:
         )
         self._refresh_token_info = DabPumpsRefreshTokenInfo(
             token = self._validate_token( result.get('refresh_token') ),
-            expires_in = result.get('expires_in') or default_refresh_expires_in,
+            expires_in = result.get('refresh_expires_in') or default_refresh_expires_in,
             expiry = self._calculate_expiry( result.get('refresh_expires_in'), default_refresh_expires_in ),
             client_id = self._refresh_token_info.client_id,
             client_secret = self._refresh_token_info.client_secret,
@@ -392,6 +396,7 @@ class AsyncDabPumpsBase:
         state_b64 = base64.urlsafe_b64encode(state_bytes).decode('utf-8').rstrip('=')
         state_guid = str(UUID(bytes=state_bytes))
 
+        openid_state = state_b64
         openid_code_bytes = os.urandom(86)
         openid_code_verifier = base64.urlsafe_b64encode(openid_code_bytes).decode('utf-8').rstrip('=')
         openid_hashed_verifier = hashlib.sha256(openid_code_verifier.encode('utf-8')).digest()
@@ -402,19 +407,19 @@ class AsyncDabPumpsBase:
                 openid_client_id = DABLIVE_APP_CLIENT_ID
                 openid_client_secret = DABLIVE_APP_CLIENT_SECRET
                 openid_redirect_uri = DABLIVE_APP_REDIRECT_URI
-                openid_state = state_b64
+                user_agent = DABLIVE_APP_USER_AGENT
 
             case DabPumpsLogin.DCONNECT_WEB:    # Experimental in _login_dabsso()
                 openid_client_id = DCONNECT_WEB_CLIENT_ID
                 openid_client_secret = DCONNECT_WEB_CLIENT_SECRET
                 openid_redirect_uri = DCONNECT_WEB_REDIRECT_URI
-                openid_state = state_b64
+                user_agent = DCONNECT_APP_USER_AGENT
 
             case DabPumpsLogin.H2D_APP | _:
                 openid_client_id = H2D_APP_CLIENT_ID
                 openid_client_secret = H2D_APP_CLIENT_SECRET
                 openid_redirect_uri = H2D_APP_REDIRECT_URI
-                openid_state = state_b64
+                user_agent = H2D_APP_USER_AGENT
 
         # Step 1: get login url
         context = f"login {method} openid-connect auth"
@@ -430,7 +435,11 @@ class AsyncDabPumpsBase:
                 'code_challenge_method': 'S256',
                 'redirect_uri': openid_redirect_uri,
             },
+            'headers': {
+                'User-Agent': user_agent,
+            },
             "flags": {
+                'authorize': False,
                 'redirects': False,
             }
         }
@@ -460,12 +469,14 @@ class AsyncDabPumpsBase:
                 "url": auth_url,
                 "headers": {
                     'Content-Type': 'application/x-www-form-urlencoded',
+                    'User-Agent': user_agent,
                 },
                 "data": {
                     'username': self._username, 
                     'password': self._password,
                 },
                 "flags": {
+                    'authorize': False,
                     'redirects': False,
                 }
             }
@@ -493,6 +504,7 @@ class AsyncDabPumpsBase:
             "url": DABSSO_API_URL + '/auth/realms/dwt-group/protocol/openid-connect/token',
             "headers": {
                 'Content-Type': 'application/x-www-form-urlencoded',
+                'User-Agent': user_agent,
             },
             "data": {
                 'grant_type': 'authorization_code',
@@ -502,6 +514,7 @@ class AsyncDabPumpsBase:
                 'redirect_uri': openid_redirect_uri,
             },
             "flags": {
+                'authorize': False,
                 'redirects': False,
             }
         }
@@ -519,7 +532,7 @@ class AsyncDabPumpsBase:
         )
         self._refresh_token_info = DabPumpsRefreshTokenInfo(
             token = self._validate_token( result.get('refresh_token') ),
-            expires_in = result.get('expires_in') or default_refresh_expires_in,
+            expires_in = result.get('refresh_expires_in') or default_refresh_expires_in,
             expiry = self._calculate_expiry( result.get('refresh_expires_in'), DABSSO_REFRESH_TOKEN_VALID ),
             client_id = openid_client_id,
             client_secret = openid_client_secret,
@@ -553,6 +566,7 @@ class AsyncDabPumpsBase:
             "url": DABSSO_API_URL + f"/auth/realms/dwt-group/protocol/openid-connect/token",
             "headers": {
                 'Content-Type': 'application/x-www-form-urlencoded',
+                'User-Agent': DCONNECT_APP_USER_AGENT,
             },
             "data": {
                 'client_id': openid_client_id,
@@ -561,6 +575,9 @@ class AsyncDabPumpsBase:
                 'grant_type': 'password',
                 'username': self._username, 
                 'password': self._password 
+            },
+            "flags": {
+                'authorize': False,
             },
         }
         
@@ -574,7 +591,7 @@ class AsyncDabPumpsBase:
         )
         self._refresh_token_info = DabPumpsRefreshTokenInfo(
             token = self._validate_token( result.get('refresh_token') ),
-            expires_in = result.get('expires_in') or DCONNECT_REFRESH_TOKEN_VALID,
+            expires_in = result.get('refresh_expires_in') or DCONNECT_REFRESH_TOKEN_VALID,
             expiry = self._calculate_expiry( result.get('refresh_expires_in'), DCONNECT_REFRESH_TOKEN_VALID ),
             client_id = openid_client_id,
             client_secret = openid_client_secret,
@@ -603,6 +620,9 @@ class AsyncDabPumpsBase:
         request = {
             "method": "GET",
             "url": DCONNECT_API_URL,
+            "flags": {
+                'authorize': False,
+            },
         }
 
         _LOGGER.debug(f"Try login with DConnect (web); retrieve login page")
@@ -625,6 +645,9 @@ class AsyncDabPumpsBase:
             "data": {
                 'username': self._username, 
                 'password': self._password 
+            },
+            "flags": {
+                'authorize': False,
             },
         }
         
@@ -676,24 +699,15 @@ class AsyncDabPumpsBase:
         if not self._access_token_info.is_valid:
             return False
         
-        # User session is not supported via DCONNECT_WEB login methods
-        match self._login_info.login_method:
-            case None: return False
-            case DabPumpsLogin.H2D_APP:      self._session_info.dabcs_auth = H2D_APP_DABCS_AUTH
-            case DabPumpsLogin.DABLIVE_APP:  self._session_info.dabcs_auth = DABLIVE_APP_DABCS_AUTH
-            case DabPumpsLogin.DCONNECT_APP: self._session_info.dabcs_auth = DCONNECT_APP_DABCS_AUTH
-            case DabPumpsLogin.DCONNECT_WEB | _:
-                raise DabPumpsError(f"Subscribe to push data is not supported for login method {self._login_info.login_method}")
+        # User session works with all login methods, except DCONNECT_WEB or when not logged in
+        if self._login_info.login_method in [DabPumpsLogin.DCONNECT_WEB, None]:
+            raise DabPumpsError(f"Subscribe to push data is not supported for login method {self._login_info.login_method}")
         
         # Step 1: start session
         context = f"user session start {self._username.lower()}"
         request = {
             "method": "POST",
             "url": DABCS_API_URL + '/mobile/v1/user/session?destroyothers=1',
-            "headers": {
-                "x-dabcs-auth": self._session_info.dabcs_auth,
-                "x-dabcs-device": self._session_info.dabcs_device,
-            },
         }
 
         _LOGGER.debug(f"User session start for '{self._username}'")
@@ -715,8 +729,6 @@ class AsyncDabPumpsBase:
             "method": "POST",
             "url": DABCS_API_URL + '/mobile/v1/user/wstoken',
             "headers": {
-                "x-dabcs-auth": self._session_info.dabcs_auth,
-                "x-dabcs-device": self._session_info.dabcs_device,
                 "x-session-token": self._session_info.key,
             }
         }
@@ -750,7 +762,7 @@ class AsyncDabPumpsBase:
             return False
         
         # User session works with all login methods, except DCONNECT_WEB or when not logged in
-        if self._login_info.login_method in [None, DabPumpsLogin.DCONNECT_WEB]:
+        if self._login_info.login_method in [DabPumpsLogin.DCONNECT_WEB, None]:
             return False
         
         try:
@@ -759,8 +771,6 @@ class AsyncDabPumpsBase:
                 "method": "DELETE",
                 "url": DABCS_API_URL + '/mobile/v1/user/session',
                 "headers": {
-                    "x-dabcs-auth": self._session_info.dabcs_auth,
-                    "x-dabcs-device": self._session_info.dabcs_device,
                     "x-session-token": self._session_info.key
                 }
             }
@@ -1456,6 +1466,9 @@ class AsyncDabPumpsBase:
         request = {
             "method": "GET",
             "url": DCONNECT_API_URL + f"/resources/js/localization_{lang}.properties?format=JSON&fullmerge=1",
+            "headers": {
+                'User-Agent': H2D_APP_USER_AGENT,
+            },
             "flags": {
                 'authorize': False,
             },
@@ -1637,14 +1650,18 @@ class AsyncDabPumpsBase:
         if not "headers" in request:
             request["headers"] = {}
 
-        if self._login_info.auth_method == DabPumpsAuth.HEADER and self._access_token_info.token and not context.startswith('login') and flags_authorize:
+        if self._login_info.auth_method == DabPumpsAuth.HEADER and self._access_token_info.token and flags_authorize:
+            # Add authorization header
             request["headers"]['Authorization'] = 'Bearer ' + self._access_token_info.token
+
+        if self._login_info.dabcs_auth:
+            request["headers"]['x-dabcs-auth'] = self._login_info.dabcs_auth
+            request["headers"]['x-dabcs-device'] = self._login_info.dabcs_device
 
         if self._login_info.extra_headers:
             request["headers"].update(self._login_info.extra_headers)
 
         # Add some default headers if not already set via extra_headers
-        request["headers"].setdefault('User-Agent', 'DabIopApp/1.8.6')
         request["headers"].setdefault('Cache-Control', 'no-store, no-cache, max-age=0')
         request["headers"].setdefault('Connection', 'close')
 
@@ -1674,6 +1691,11 @@ class AsyncDabPumpsBase:
             else:
                 response["text"] = rsp.text
             
+        except httpx.ConnectTimeout:
+            error = f"Request failed: timeout while trying to reach {request["url"]}"
+            _LOGGER.debug(error)
+            raise DabPumpsConnectError(error)
+
         except Exception as ex:
             error = f"Request failed: exception '{ex}' while trying to reach {request["url"]}"
             _LOGGER.debug(error)

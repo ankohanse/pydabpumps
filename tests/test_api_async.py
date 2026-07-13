@@ -374,6 +374,7 @@ async def test_push_data(name, method, loop, exp_except, request):
         counter_handler += 1
 
     if context.framework != 'async':
+        # Push functionality is only supported in the async framework, not in the sync one
         for device_serial in context.api.device_map.keys():
             with pytest.raises(NotImplementedError):
                 await context.api.on_device_state(device_serial, device_state_handler)
@@ -386,11 +387,11 @@ async def test_push_data(name, method, loop, exp_except, request):
         # Wait a moment for the Wamp connection to be established and the first data to be received
         await asyncio.sleep(30)
 
-        assert context.api._session_info.dabcs_auth is not None
-        assert context.api._session_info.dabcs_device is not None            
+        assert context.api._login_info.dabcs_auth is not None
+        assert context.api._login_info.dabcs_device is not None            
         assert context.api._session_info.key is not None
         assert context.api._session_info.wstoken is not None
-        assert context.api._wamp_runner_started.is_set()
+        assert context.api._wamp_component_started.is_set()
         assert context.api._wamp_session_started.is_set()
             
         # Do the required iterations

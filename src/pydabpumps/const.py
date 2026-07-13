@@ -27,20 +27,25 @@ H2D_APP_CLIENT_ID = 'h2d-mobile'
 H2D_APP_CLIENT_SECRET = None
 H2D_APP_REDIRECT_URI = 'dabiopapp://Welcome'
 H2D_APP_DABCS_AUTH = "vwLbTh3HKJdjHRHzdEHen43PyffAc9gK"
+H2D_APP_USER_AGENT = 'DabIopApp/1.8.6' 
 
 DABLIVE_APP_CLIENT_ID = 'dablive'
 DABLIVE_APP_CLIENT_SECRET = None
 DABLIVE_APP_REDIRECT_URI = 'com.dabappfreemium://Login'
 DABLIVE_APP_DABCS_AUTH = "oAfA7xCgFqJnk4josgdFbjPcUFRzyUY9fgo7ANLcjXUTuyoL4a4MXKRErRaUiPyJ"
+DABLIVE_APP_USER_AGENT = 'DabIopApp/1.1.64'
 
 DCONNECT_APP_CLIENT_ID = 'DWT-Dconnect-Mobile'
 DCONNECT_APP_CLIENT_SECRET = 'ce2713d8-4974-4e0c-a92e-8b942dffd561'
-DCONNECT_APP_USER_AGENT = 'Dalvik/2.1.0 (Linux; U; Android 9; SM-G935F Build/PI) DConnect/2.13.1'
+DCONNECT_APP_REDIRECT_URI = None
 DCONNECT_APP_DABCS_AUTH = "vwLbTh3HKJdjHRHzdEHen43PyffAc9gK"
+DCONNECT_APP_USER_AGENT = 'Dalvik/2.1.0 (Linux; U; Android 9; SM-G935F Build/PI)' # DConnect/2.13.1'
 
 DCONNECT_WEB_CLIENT_ID =  'DWT-Dconnect'
 DCONNECT_WEB_CLIENT_SECRET = None
 DCONNECT_WEB_REDIRECT_URI = 'https://dconnect.dabpumps.com/sso?cameFrom=/dashboard&auth_callback=1'
+DCONNECT_WEB_DABCS_AUTH = "vwLbTh3HKJdjHRHzdEHen43PyffAc9gK"
+DCONNECT_WEB_USER_AGENT = 'Dalvik/2.1.0 (Linux; U; Android 9; SM-G935F Build/PI)' # DConnect/2.13.1'
 
 LOGIN_REPEAT_TIMEOUT_MIN = 1 # seconds
 LOGIN_REPEAT_TIMEOUT_MAX = 5*60 # seconds
