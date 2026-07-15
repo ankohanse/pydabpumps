@@ -6,20 +6,9 @@ but also provides functionality to subscribe to push data.
 """
 
 import asyncio
-import base64
-import copy
-import hashlib
-import ssl
-import jwt
-import math
-import os
-import warnings
-import asyncio
 import httpx
-import json
 import logging
-import re
-import time
+import ssl
 
 from autobahn.asyncio.component import Component as WampComponent
 from autobahn.asyncio.wamp import ApplicationSession
@@ -91,21 +80,18 @@ class WampSubscriptionDetails:
 
 class AsyncDabPumps(AsyncDabPumpsBase):
     
-    def __init__(self, username, password, client:httpx.AsyncClient=None, login_info:DabPumpsLoginInfo=None, access_token_info:DabPumpsAccessTokenInfo=None, refresh_token_info:DabPumpsRefreshTokenInfo=None):
+    def __init__(self, username, password, client:httpx.AsyncClient=None, ssl_context:ssl.SSLContext=None, login_info:DabPumpsLoginInfo=None, access_token_info:DabPumpsAccessTokenInfo=None, refresh_token_info:DabPumpsRefreshTokenInfo=None):
         super().__init__(
             username = username, 
             password = password, 
             client = client,
+            ssl_context = ssl_context,
             login_info = login_info, 
             access_token_info = access_token_info, 
             refresh_token_info = refresh_token_info
         )
         
         # Wamp component and session
-        self._wamp_ssl_context = ssl.create_default_context()
-        self._wamp_ssl_context.check_hostname = False
-        self._wamp_ssl_context.verify_mode = ssl.CERT_NONE
-        
         self._wamp_component = WampComponent(
             transports = [
                 {
@@ -115,7 +101,7 @@ class AsyncDabPumps(AsyncDabPumpsBase):
                         "type": "tcp",
                         "host": WAMP_HOST,
                         "port": WAMP_PORT,
-                        "tls": self._wamp_ssl_context,                                                                                                                   
+                        "tls": self._ssl_context,                                                                                                                   
                     },
                 },
             ],

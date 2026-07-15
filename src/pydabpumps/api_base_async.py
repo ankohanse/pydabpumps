@@ -2,6 +2,7 @@
 
 import base64
 import hashlib
+import ssl
 import jwt
 import math
 import os
@@ -96,7 +97,7 @@ _LOGGER = logging.getLogger(__name__)
 # DabPumps api to detect device and get device info, fetch the actual data from the device, and parse it
 class AsyncDabPumpsBase:
     
-    def __init__(self, username, password, client:httpx.AsyncClient=None, login_info:DabPumpsLoginInfo=None, access_token_info:DabPumpsAccessTokenInfo=None, refresh_token_info:DabPumpsRefreshTokenInfo=None, flags:dict[DabPumpsApiFlag,Any] = {}):
+    def __init__(self, username, password, client:httpx.AsyncClient=None, ssl_context:ssl.SSLContext=None, login_info:DabPumpsLoginInfo=None, access_token_info:DabPumpsAccessTokenInfo=None, refresh_token_info:DabPumpsRefreshTokenInfo=None, flags:dict[DabPumpsApiFlag,Any] = {}):
         # Configuration
         self._username: str = username
         self._password: str = password
@@ -129,8 +130,10 @@ class AsyncDabPumpsBase:
         self._status_update_map: dict[str, datetime] = {}               # id(serial+key) -> datetime
 
         # Http Client; we keep the same client for the whole life of the api instance.
-        self._http_client: httpx.AsyncClient = client or httpx.AsyncClient()
+        self._http_client: httpx.AsyncClient = client or httpx.AsyncClient(verify=ssl_context)
         self._http_client_close = False if client else True     # Do not close an external passed client
+
+        self._ssl_context: ssl.SSLContext = ssl_context or ssl.create_default_context()
 
         # Locks to protect certain operations from being called from multiple threads
         self._login_lock = asyncio.Lock()
