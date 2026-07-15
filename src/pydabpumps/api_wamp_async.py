@@ -352,7 +352,7 @@ class AsyncDabPumps(AsyncDabPumpsBase):
                 statusts = data.get('statusts') or None
                 values = data.get('status') or {}
 
-                _LOGGER.debug(f"Received {len(values)} new statuses for device {serial}")
+                _LOGGER.debug(f"State updated for '{serial}' with {len(values)} values")
 
                 # Merge with existing statuses for this device
                 state_new = self._parse_device_state(serial, statusts, None, values)

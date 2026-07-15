@@ -1059,7 +1059,7 @@ class DabPumpsBase:
             )
             device_map[dum_serial] = device
             
-            _LOGGER.debug(f"Device found: {dum_name} with serial {dum_serial}")
+            _LOGGER.debug(f"Device found: '{dum_name}' with serial {dum_serial}")
             
         # Sanity check. # Never overwrite a known device_map
         if len(device_map) == 0:
@@ -1177,7 +1177,7 @@ class DabPumpsBase:
         if len(conf_params) == 0:
             raise DabPumpsDataError(f"No config found for '{config_id}'")
         
-        _LOGGER.debug(f"Configuration found: {conf_name} with {len(conf_params)} metadata params")        
+        _LOGGER.debug(f"Configuration found: '{conf_name}' with {len(conf_params)} metadata params")        
 
         # Merge with configurations from other devices
         self._device_config_map[conf_id] = config
@@ -1237,9 +1237,9 @@ class DabPumpsBase:
         state = self._parse_device_state(serial, statusts, lastrecv, values)
 
         if len(state.status) == 0:
-            raise DabPumpsDataError(f"No statuses found for '{serial}'")
+            raise DabPumpsDataError(f"No values found in state for '{serial}'")
         
-        _LOGGER.debug(f"Statuses found for '{serial}' with {len(state.status)} values")
+        _LOGGER.debug(f"State fetched for '{serial}' with {len(state.status)} values")
 
         # Merge with statuses from other devices
         self._device_state_map[serial] = state
