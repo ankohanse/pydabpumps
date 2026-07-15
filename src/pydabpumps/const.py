@@ -59,7 +59,7 @@ WAMP_AUTH_METHODS = ['ticket']
 WAMP_AUTH_ID = 'iopapp'
 
 WAMP_START_TIMEOUT = 5 # seconds
-WAMP_REPEAT_TIMEOUT_MIN = 1 # seconds
+WAMP_REPEAT_TIMEOUT_MIN = 10 # seconds
 WAMP_REPEAT_TIMEOUT_MAX = 60 # seconds
 
 # Period to prevent status updates when value was recently updated

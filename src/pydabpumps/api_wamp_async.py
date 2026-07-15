@@ -163,10 +163,6 @@ class AsyncDabPumps(AsyncDabPumpsBase):
             state = api.device_state_map.get(serial)
         """
 
-        # Subscribe to status changes works with all login methods, except DCONNECT_WEB
-        if self._login_info.login_method in [DabPumpsLogin.DCONNECT_WEB]:
-            raise DabPumpsError(f"Subscribe to push data is not supported for login method {self._login_info.login_method}")
-
         # Determine the topic for this device
         device = self._device_map.get(serial)
         if device is None: 

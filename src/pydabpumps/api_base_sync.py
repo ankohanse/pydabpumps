@@ -707,7 +707,7 @@ class DabPumpsBase:
         
         # User session works with all login methods, except DCONNECT_WEB or when not logged in
         if self._login_info.login_method in [DabPumpsLogin.DCONNECT_WEB, None]:
-            raise DabPumpsError(f"Subscribe to push data is not supported for login method {self._login_info.login_method}")
+            return False
         
         # Step 1: start session
         context = f"user session start {self._username.lower()}"
@@ -1699,6 +1699,11 @@ class DabPumpsBase:
             
         except httpx.ConnectTimeout:
             error = f"Request failed: timeout while trying to reach {request["url"]}"
+            _LOGGER.debug(error)
+            raise DabPumpsConnectError(error)
+
+        except httpx.ConnectError:
+            error = f"Request failed: no connection while trying to reach {request["url"]}"
             _LOGGER.debug(error)
             raise DabPumpsConnectError(error)
 
