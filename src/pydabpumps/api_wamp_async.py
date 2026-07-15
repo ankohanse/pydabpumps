@@ -9,6 +9,7 @@ import asyncio
 import base64
 import copy
 import hashlib
+import ssl
 import jwt
 import math
 import os
@@ -36,6 +37,8 @@ from .api_base_async import(
     AsyncDabPumpsBase,
 )
 from .const import (
+    WAMP_HOST,
+    WAMP_PORT,
     WAMP_URL,
     WAMP_REALM,
     WAMP_AUTH_METHODS,
@@ -99,8 +102,23 @@ class AsyncDabPumps(AsyncDabPumpsBase):
         )
         
         # Wamp component and session
+        self._wamp_ssl_context = ssl.create_default_context()
+        self._wamp_ssl_context.check_hostname = False
+        self._wamp_ssl_context.verify_mode = ssl.CERT_NONE
+        
         self._wamp_component = WampComponent(
-            transports = WAMP_URL,
+            transports = [
+                {
+                    "type": "websocket",
+                    "url": WAMP_URL,
+                    "endpoint": {
+                        "type": "tcp",
+                        "host": WAMP_HOST,
+                        "port": WAMP_PORT,
+                        "tls": self._wamp_ssl_context,                                                                                                                   
+                    },
+                },
+            ],
             realm = WAMP_REALM,
             session_factory = self._wamp_session_factory,
         )

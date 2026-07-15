@@ -52,6 +52,8 @@ LOGIN_REPEAT_TIMEOUT_MAX = 5*60 # seconds
 
 # WAMP is used for push messages from the H2D servers
 WAMP_URL = 'wss://dconnect.dabpumps.com/wsapp'
+WAMP_HOST = 'dconnect.dabpumps.com'
+WAMP_PORT = 443
 WAMP_REALM = 'realm1'
 WAMP_AUTH_METHODS = ['ticket']
 WAMP_AUTH_ID = 'iopapp'
