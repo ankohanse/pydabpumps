@@ -66,9 +66,6 @@ class AsyncTaskHelper:
     async def _loop(self):
         _LOGGER.debug(f"{self._name} started")
 
-        # Clear any scheduled timeouts that were set before the task was started
-        self._scheduled_timeout = None
-
         while not self._stop_event.is_set():
 
             self._wakeup_event.clear()

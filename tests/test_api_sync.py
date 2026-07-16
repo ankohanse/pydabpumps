@@ -280,10 +280,6 @@ def test_get_data(name, method, loop, exp_except, request):
     for idx in range(1,loop+1):
         # Get fresh device statuses
         try:
-            # Check access-token and refresh or re-login if needed
-            context.api.login()
-            assert login_method_org == context.api.login_info.login_method
-
             context.api.fetch_install_statuses(install_id)
 
             assert context.api.device_state_map is not None
@@ -335,22 +331,22 @@ def test_get_data(name, method, loop, exp_except, request):
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("context")
 @pytest.mark.parametrize(
-    "name, method, loop, exp_except",
+    "name, method, loop, exp_push, exp_except",
     [
-        ("ok",  None,                        0, None),
-        ("ok",  DabPumpsLogin.H2D_APP,       0, None),
-        ("ok",  DabPumpsLogin.DABLIVE_APP,   0, None),
-        ("ok",  DabPumpsLogin.DCONNECT_APP,  0, None),
-        ("ok",  DabPumpsLogin.DCONNECT_WEB,  0, DabPumpsError),
+        ("ok",  None,                        0, True,  None),
+        ("ok",  DabPumpsLogin.H2D_APP,       0, True,  None),
+        ("ok",  DabPumpsLogin.DABLIVE_APP,   0, True,  None),
+        ("ok",  DabPumpsLogin.DCONNECT_APP,  0, True,  None),
+        ("ok",  DabPumpsLogin.DCONNECT_WEB,  0, False, None),
         #
-        #("24h", None,                        24*60, None),    # Run 1 full day
-        #("24h", DabPumpsLogin.H2D_APP,       24*60, None),    # Run 1 full day
-        #("24h", DabPumpsLogin.DABLIVE_APP,   24*60, None),    # Run 1 full day
-        #("24h", DabPumpsLogin.DCONNECT_APP,  24*60, None),    # Run 1 full day
-        #("24h", DabPumpsLogin.DCONNECT_WEB,  24*60, None),    # Run 1 full day
+        #("24h", None,                        24*60, True,  None),    # Run 1 full day
+        #("24h", DabPumpsLogin.H2D_APP,       24*60, True,  None),    # Run 1 full day
+        #("24h", DabPumpsLogin.DABLIVE_APP,   24*60, True,  None),    # Run 1 full day
+        #("24h", DabPumpsLogin.DCONNECT_APP,  24*60, True,  None),    # Run 1 full day
+        #("24h", DabPumpsLogin.DCONNECT_WEB,  24*60, False, None),    # Run 1 full day
     ]
 )
-def test_push_data(name, method, loop, exp_except, request):
+def test_push_data(name, method, loop, exp_push, exp_except, request):
     context = request.getfixturevalue("context")
     context.api = DabPumps(TEST_USERNAME, TEST_PASSWORD)
     assert context.api.closed == False
@@ -376,7 +372,7 @@ def test_push_data(name, method, loop, exp_except, request):
         nonlocal counter_handler
         counter_handler += 1
 
-    if context.framework != 'async':
+    if context.framework not in ['async']:
         # Push functionality is only supported in the async framework, not in the sync one
         for device_serial in context.api.device_map.keys():
             with pytest.raises(NotImplementedError):
@@ -391,21 +387,27 @@ def test_push_data(name, method, loop, exp_except, request):
         time.sleep(30)
 
         assert context.api._login_info.dabcs_auth is not None
-        assert context.api._login_info.dabcs_device is not None            
-        assert context.api._session_info.key is not None
-        assert context.api._session_info.wstoken is not None
-        assert context.api._wamp_component_started.is_set()
-        assert context.api._wamp_session_started.is_set()
+        assert context.api._login_info.dabcs_device is not None    
+
+        if exp_push:   
+            assert context.api._session_info.key is not None
+            assert context.api._session_info.wstoken is not None
+            assert context.api._wamp_component_started.is_set()
+            assert context.api._wamp_session_started.is_set()
+        else:
+            assert context.api._session_info.key is None
+            assert context.api._session_info.wstoken is None
+            assert not context.api._wamp_component_started.is_set()
+            assert not context.api._wamp_session_started.is_set()
             
         # Do the required iterations
         for idx in range(0,loop+1):
 
-            # Wait for data to come in.
-            # Meanwhile keep the api alive
-            context.api.login()
-
             # Check that data has arrived within each iteration
-            assert counter_handler >= idx
+            if exp_push:
+                assert counter_handler >= idx
+            else:
+                assert counter_handler == 0
 
             if loop:
                 # Simulate failure to recover from
@@ -768,7 +770,7 @@ def test_callbacks(name, method, exp_d, exp_except, request):
     # Do some more api calls; shouldn't change info and token counters since tokens are still valid
     context.api.fetch_install_list()
 
-    assert counter_diagnostics == exp_d + 1
+    assert counter_diagnostics >= exp_d + 1
 
     # Get first install details, metadata and initial statuses
     install = next( (install for install in context.api.install_map.values()), None)

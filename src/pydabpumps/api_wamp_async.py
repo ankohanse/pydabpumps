@@ -135,15 +135,15 @@ class AsyncDabPumps(AsyncDabPumpsBase):
         # Login via Http
         await super().login(test_method)
             
-        if not self._wamp_reconnect_task.running:
-            await self._wamp_reconnect_task.start()
+        # If needed start our wamp reconnect handler loop
+        await self._start_wamp_reconnect_handler()
 
 
     async def close(self):
         """Safely logout and close all client handles"""
 
         # Stop Wamp session and user session
-        await self._wamp_reconnect_task.stop()
+        await self._stop_wamp_reconnect_handler()
         await self._stop_wamp_session()
         await self._stop_user_session()
 
@@ -179,8 +179,26 @@ class AsyncDabPumps(AsyncDabPumpsBase):
             callback = callback,
         )
 
-        # Trigger the reconnect handler to immediately connect if needed
+        # Make sure the login handler and reconnect handler loops are started
+        # and trigger the reconnect handler to immediately connect if needed
+        await self._start_login_handler()
+        await self._start_wamp_reconnect_handler()
         await self._wamp_reconnect_task.schedule(utcnow())
+
+
+    async def _start_wamp_reconnect_handler(self):
+        """
+        Start our Wamp reconnect handler loop
+        """
+        if not self._wamp_reconnect_task.running:
+            await self._wamp_reconnect_task.start()
+
+
+    async def _stop_wamp_reconnect_handler(self):
+        """
+        Stop our Wamp reconnect handler loop
+        """
+        await self._wamp_reconnect_task.stop()
 
 
     async def _wamp_reconnect_handler(self):

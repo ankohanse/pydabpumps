@@ -224,9 +224,8 @@ class AsyncDabPumpsBase:
         async with self._login_lock:
             await self._login(test_method=test_method)
 
-            # If needed, start our login_refresh_handler thread
-            if self._login_handler_start and not self._login_handler_task.running:
-                await self._login_handler_task.start()
+        # If needed, start our (re-)login handler
+        await self._start_login_handler()
 
 
     async def _login(self, test_method:DabPumpsLogin|List[DabPumpsLogin]=None):
@@ -791,12 +790,27 @@ class AsyncDabPumpsBase:
         return True
 
 
+    async def _start_login_handler(self):
+        """
+        Start our (re-)login handler loop
+        """
+        if self._login_handler_start and not self._login_handler_task.running:
+            await self._login_handler_task.start()
+
+
+    async def _stop_login_handler(self):
+        """
+        Stop our (re-)login handler loop
+        """
+        if self._login_handler_task.running:
+            await self._login_handler_task.stop()
+
+
     async def logout(self):
         """Logout from DAB Pumps"""
 
         # Stop token refresh_handler
-        if self._login_handler_task.running:
-            await self._login_handler_task.stop()
+        await self._stop_login_handler()
 
         # Only one thread at a time can check token cookie and do subsequent login or logout if needed.
         # Once one thread is done, the next thread can then check the (new) token cookie.
@@ -1094,7 +1108,7 @@ class AsyncDabPumpsBase:
                 #     }
                 #   ]
                 # }
-                ins_configs = raw_install_data.get('configurations') or []
+                ins_configs = raw_install_data.get('configurations') or {}
 
                 for ins_config_id, ins_config in ins_configs.items():
                     if ins_config_id == config_id:
