@@ -1219,7 +1219,7 @@ class AsyncDabPumpsBase:
                     if dum_serial == serial:
                         statusts = dum.get('statusts') or ""
                         lastrecv = dum.get('lastreceived') or ""
-                        values = dum.get('status') or {}
+                        status = dum.get('status') or {}
                         break
         
             case DabPumpsFetch.DCONNECT: 
@@ -1239,13 +1239,12 @@ class AsyncDabPumpsBase:
                 statusts = raw.get('statusts') or ""
                 lastrecv = raw.get('lastreceived') or ""
                 status = raw.get('status') or "{}" # string!
-                values = json.loads(status)
 
             case _: 
                 return # not logged in
 
         # Process the resulting raw data
-        state = self._parse_device_state(serial, statusts, lastrecv, values)
+        state = self._parse_device_state(serial, statusts, lastrecv, status)
 
         if len(state.status) == 0:
             raise DabPumpsDataError(f"No values found in state for '{serial}'")
@@ -1256,7 +1255,7 @@ class AsyncDabPumpsBase:
         self._device_state_map[serial] = state
         
 
-    def _parse_device_state(self, serial: str, statusts: Any, lastrecv: Any, values: dict) -> DabPumpsDeviceState:
+    def _parse_device_state(self, serial: str, statusts: Any, lastrecv: Any, values: Any) -> DabPumpsDeviceState:
         """
         Heper function to parse received data into a device state.
         Called when data is retrieved via a poll request or via a push from the remote DAB Pumps servers.
@@ -1276,9 +1275,16 @@ class AsyncDabPumpsBase:
         else:
             lastrecv_ts = utcmin()
 
+        if isinstance(values, str):
+            items = json.loads(values)
+        elif isinstance(values, dict):
+            items = values
+        else:
+            items = {}
+
         status: dict[str, DabPumpsStatus] = {}
 
-        for item_key, item_code in values.items():
+        for item_key, item_code in items.items():
             try:
                 # Check if this status was recently updated via change_device_status
                 # We keep the updated value for a hold period to prevent it from flipping back and forth 
