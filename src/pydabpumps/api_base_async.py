@@ -1199,7 +1199,7 @@ class AsyncDabPumpsBase:
 
         statusts = None
         lastrecv = None
-        values = {}
+        status = {}
 
         match self._login_info.fetch_method:
             case DabPumpsFetch.DABCS:

@@ -112,7 +112,7 @@ async def main():
 
         # Show initial device states and subscribe to state updates
         for serial in api.device_map.keys():
-            await show_device_state(device.serial)
+            await show_device_state(serial)
             await api.on_device_state(serial, show_device_state)
 
         # Keep the application alive
