@@ -375,6 +375,8 @@ class AsyncDabPumps(AsyncDabPumpsBase):
                     status = state_old.status | state_new.status,
                 )
 
+                _LOGGER.debug(f"State updated for '{serial}' with {len(state_new.status)} values")
+
                 # Notify our parent via the callback that was provided earlier
                 if info.callback is not None:
                     try:

@@ -91,7 +91,7 @@ async def main():
             device_state = device_state or api.device_state_map.get(serial)
 
             logger.info("")
-            logger.info(f"State for {device.name}: {len(device_state.status)} statuses")
+            logger.info(f"State for {device.name}:")
 
             for key,status in device_state.status.items():
                 if status.code in [DabPumpsStatusCode.HIDDEN]:
