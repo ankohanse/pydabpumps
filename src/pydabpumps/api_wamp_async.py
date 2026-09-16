@@ -33,6 +33,7 @@ from .const import (
     WAMP_AUTH_METHODS,
     WAMP_AUTH_ID,
     WAMP_START_TIMEOUT,
+    WAMP_RECONNECT_DELAY,
     WAMP_REPEAT_TIMEOUT_MIN,
     WAMP_REPEAT_TIMEOUT_MAX,
     utcnow,
@@ -418,8 +419,8 @@ class AsyncDabPumps(AsyncDabPumpsBase):
         # Flag all previous subscribe requests as cancelled so they can be resubmitted once we rejoin
         await self._wamp_subscribe_cancelled()
 
-        # Trigger an immediate reconnect attempt
-        await self._wamp_reconnect_task.schedule(utcnow())
+        # Trigger a delayed reconnect attempt
+        await self._wamp_reconnect_task.schedule(utcnow() + timedelta(seconds=WAMP_RECONNECT_DELAY))
 
 
     def _wamp_done_handler(self, task:asyncio.Future=None):

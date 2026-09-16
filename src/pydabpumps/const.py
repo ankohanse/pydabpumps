@@ -47,7 +47,7 @@ DCONNECT_WEB_REDIRECT_URI = 'https://dconnect.dabpumps.com/sso?cameFrom=/dashboa
 DCONNECT_WEB_DABCS_AUTH = "vwLbTh3HKJdjHRHzdEHen43PyffAc9gK"
 DCONNECT_WEB_USER_AGENT = 'Dalvik/2.1.0 (Linux; U; Android 9; SM-G935F Build/PI)' # DConnect/2.13.1'
 
-LOGIN_REPEAT_TIMEOUT_MIN = 1 # seconds
+LOGIN_REPEAT_TIMEOUT_MIN = 60 # seconds
 LOGIN_REPEAT_TIMEOUT_MAX = 5*60 # seconds
 
 # WAMP is used for push messages from the H2D servers
@@ -59,8 +59,9 @@ WAMP_AUTH_METHODS = ['ticket']
 WAMP_AUTH_ID = 'iopapp'
 
 WAMP_START_TIMEOUT = 5 # seconds
-WAMP_REPEAT_TIMEOUT_MIN = 10 # seconds
-WAMP_REPEAT_TIMEOUT_MAX = 60 # seconds
+WAMP_RECONNECT_DELAY = 60 # seconds
+WAMP_REPEAT_TIMEOUT_MIN = 60 # seconds
+WAMP_REPEAT_TIMEOUT_MAX = 60*60 # seconds
 
 # Period to prevent status updates when value was recently updated
 STATUS_UPDATE_HOLD = 30 # seconds
