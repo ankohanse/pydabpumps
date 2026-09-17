@@ -65,6 +65,7 @@ from .const import (
 from .data import (
     DabPumpsApiFlag,
     DabPumpsError,
+    DabPumpsTokenRefreshError,
     DabPumpsConnectError,
     DabPumpsAuthError,
     DabPumpsDataError,
@@ -107,13 +108,13 @@ class DabPumpsBase:
 
         # Login data
         self._login_active: bool = False
-        self._login_info: DabPumpsLoginInfo = login_info or DabPumpsLoginInfo()
+        self._login_info: DabPumpsLoginInfo = login_info or DabPumpsLoginInfo(login_method=DabPumpsLogin.H2D_APP)
         self._access_token_info: DabPumpsAccessTokenInfo = access_token_info or DabPumpsAccessTokenInfo()
         self._refresh_token_info: DabPumpsRefreshTokenInfo = refresh_token_info or DabPumpsRefreshTokenInfo()
         self._session_info: DabPumpsSessionInfo = DabPumpsSessionInfo()
         
         # Automatic refresh of access token or re-login
-        self._login_handler_start = flags.get(DabPumpsApiFlag.LOGIN_HANDLER_START, True)
+        self._login_handler_start = flags.get(DabPumpsApiFlag.LOGIN_HANDLER_START, False)
         self._login_handler_task = TaskHelper(
             name="Relogin handler", 
             action=self.login, 
@@ -247,8 +248,11 @@ class DabPumpsBase:
         elif isinstance(test_method, str):
             methods = [test_method]
         else:
-            methods = [DabPumpsLogin.ACCESS_TOKEN, DabPumpsLogin.REFRESH_TOKEN, self._login_info.login_method, DabPumpsLogin.H2D_APP, DabPumpsLogin.DABLIVE_APP, DabPumpsLogin.DCONNECT_APP]  
-            # DabPumpsLogin.DCONNECT_WEB removed because it does not support Wamp/Push data
+            methods = [DabPumpsLogin.ACCESS_TOKEN, DabPumpsLogin.REFRESH_TOKEN, DabPumpsLogin.H2D_APP]
+            # Remove other login methods, old obsolete list is:
+            #   methods = [DabPumpsLogin.ACCESS_TOKEN, DabPumpsLogin.REFRESH_TOKEN, self._login_info.login_method, DabPumpsLogin.H2D_APP, DabPumpsLogin.DABLIVE_APP, DabPumpsLogin.DCONNECT_APP]  
+            #
+            # DabPumpsLogin.DCONNECT_WEB was already removed because it does not support Wamp/Push data
             
         for method in methods:
             try:
@@ -280,7 +284,13 @@ class DabPumpsBase:
                     # if we reached this point then a login method succeeded
                     self._login_active = True
                     return 
-            
+
+            except DabPumpsTokenRefreshError as tre:
+                # An error occurred during token refresh, but the refresh token itself is still assumed valid.
+                # Bail out of the login process.
+                error = tre
+                break
+
             except Exception as ex:
                 error = ex
 
@@ -355,11 +365,36 @@ class DabPumpsBase:
             },
             "flags": {
                 'authorize': False,
+                'response_check': False # We do our own custom response check below
             },
         }
         
         _LOGGER.debug(f"Try refresh the access-token")
-        result = self._send_request(context, request)
+        try:
+            result = self._send_request(context, request)
+
+            # Custom check of the response
+            error = result.get('error')
+            descr = result.get('error_description')
+
+            if error is not None:
+                msg = f"Error response while trying to refresh the token: '{descr}' [{error}]"
+                _LOGGER.debug(msg)
+
+                if error in ["invalid_client"]:
+                    # Refresh token is no longer valid; silently continue to the next login method
+                    return False
+                else:
+                    # Token refresh failed because of unknown error.
+                    # We must assume the refresh_token is still valid. Bail out of the login process.
+                    raise DabPumpsTokenRefreshError(msg)
+
+        except Exception as ex:
+            # Token refresh failed because of communication error.
+            # We must assume the refresh_token is still valid. Bail out of the login process.
+            msg = f"Exception while trying to refresh the token: {ex}"
+            _LOGGER.debug(msg)
+            raise DabPumpsTokenRefreshError(msg)
 
         # Store access-token in variable so it will be added as Authorization header in calls to DABCS and DConnect
         # We do not need to store the new access-token as cookie, those take care of their own refresh
@@ -380,9 +415,9 @@ class DabPumpsBase:
         )
 
         if not self._access_token_info.token or not self._refresh_token_info.token:
-            error = f"No tokens found in response from {request["url"]}"
-            _LOGGER.debug(error)    # logged as warning after last retry
-            raise DabPumpsAuthError(error)
+            msg = f"No tokens found in response from {request["url"]}"
+            _LOGGER.debug(msg)    # logged as warning after last retry
+            raise DabPumpsTokenRefreshError(msg)
 
         self._login_handler_task.schedule(self._access_token_info.expiry)
 
@@ -836,30 +871,13 @@ class DabPumpsBase:
         # Home Assistant will issue a warning when calling aclose() on the async aiohttp client.
         # Instead of closing we will simply forget the access token. The result is that on a next
         # request, the client will act like it is a new one.
+        # Never clear the refresh token !!!
         self._http_client.cookies.delete(name=DCONNECT_ACCESS_TOKEN_COOKIE, domain=DCONNECT_API_DOMAIN)
         self._access_token_info = DabPumpsAccessTokenInfo(
             token = None,
             expires_in = None,
             expiry = None,
         )
-
-        # Only clear refresh token when refresh of access token has failed
-        if method in [DabPumpsLogin.REFRESH_TOKEN]:
-            self._http_client.cookies.delete(name=DCONNECT_REFRESH_TOKEN_COOKIE, domain=DCONNECT_API_DOMAIN)
-            self._refresh_token_info = DabPumpsRefreshTokenInfo(
-                token = None,
-                expires_in = None,
-                expiry = None,
-                client_id = None,
-                client_secret = None,
-            )
-
-        # Only clear login_method when called from an external context
-        # or when actual data retrieval failed. Not when we are in a login context.
-        if not context.startswith("login"):
-            self._login_info = DabPumpsLoginInfo(
-                login_method = None
-            )
 
         # Trigger repeated re-login attempts (will be cancelled if this is a real logout)
         self._login_handler_task.schedule(None)   
@@ -1202,7 +1220,7 @@ class DabPumpsBase:
 
         statusts = None
         lastrecv = None
-        values = {}
+        status = {}
 
         match self._login_info.fetch_method:
             case DabPumpsFetch.DABCS:
@@ -1671,6 +1689,7 @@ class DabPumpsBase:
         flags = request.get("flags") or {}
         flags_redirects = flags.get("redirects", True)
         flags_authorize = flags.get("authorize", True)
+        flags_response_check  = flags.get("response_check", True)
 
         # Always add certain headers
         if not "headers" in request:
@@ -1732,7 +1751,7 @@ class DabPumpsBase:
             _LOGGER.debug(error)
 
             if flags_authorize:
-                # Force a logout to so next login will be a token refresh or real login, not a token reuse
+                # Force a logout to so next login will be a token refresh, not a token reuse
                 self._logout(context)
                 
             raise DabPumpsConnectError(error)
@@ -1741,7 +1760,7 @@ class DabPumpsBase:
         self._update_diagnostics(timestamp, context, request, response)
         
         # Check response
-        if not response["success"]:
+        if flags_response_check and not response["success"]:
             if "json" in response and "error" in response["json"]:
                 error = f"Request failed: '{response["json"]["error"]}' while trying to reach {request["url"]}"
             else:

@@ -184,6 +184,8 @@ class AsyncDabPumps(AsyncDabPumpsBase):
         # and trigger the reconnect handler to immediately connect if needed
         await self._start_login_handler()
         await self._start_wamp_reconnect_handler()
+
+        await self._login_handler_task.schedule(utcnow())
         await self._wamp_reconnect_task.schedule(utcnow())
 
 

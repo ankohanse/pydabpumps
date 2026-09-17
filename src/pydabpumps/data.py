@@ -24,7 +24,10 @@ _LOGGER = logging.getLogger(__name__)
 
 class DabPumpsError(Exception):
     """Exception to indicate generic error failure."""    
-    
+
+class DabPumpsTokenRefreshError(DabPumpsError):
+    """Exception to indicate that token refresh failed but refresh token should still be valid."""
+
 class DabPumpsConnectError(DabPumpsError):
     """Exception to indicate authentication failure."""
 
