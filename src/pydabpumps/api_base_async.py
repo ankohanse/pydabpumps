@@ -713,8 +713,10 @@ class AsyncDabPumpsBase:
             # Already have the session key and websocket token
             return True
 
-        # Check we have a valid access_token, otherwise we cannot do the call to start the user session
-        if not self._access_token_info.is_valid:
+        # Make sure we have a valid access_token, otherwise we cannot do the call to start the user session
+        try:
+            await self.login()
+        except:
             return False
         
         # User session works with all login methods, except DCONNECT_WEB or when not logged in

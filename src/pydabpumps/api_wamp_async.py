@@ -206,7 +206,6 @@ class AsyncDabPumps(AsyncDabPumpsBase):
         Check if the Wamp session needs reconnecting
         """        
         if self._wamp_subscription_map:
-            await self.login()
             await self._start_user_session()
             await self._start_wamp_session()
 
