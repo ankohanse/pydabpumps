@@ -180,12 +180,9 @@ class AsyncDabPumps(AsyncDabPumpsBase):
             callback = callback,
         )
 
-        # Make sure the login handler and reconnect handler loops are started
+        # Make sure the reconnect handler loop is started
         # and trigger the reconnect handler to immediately connect if needed
-        await self._start_login_handler()
         await self._start_wamp_reconnect_handler()
-
-        await self._login_handler_task.schedule(utcnow())
         await self._wamp_reconnect_task.schedule(utcnow())
 
 
@@ -209,6 +206,7 @@ class AsyncDabPumps(AsyncDabPumpsBase):
         Check if the Wamp session needs reconnecting
         """        
         if self._wamp_subscription_map:
+            await self.login()
             await self._start_user_session()
             await self._start_wamp_session()
 

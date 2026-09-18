@@ -112,15 +112,6 @@ class DabPumpsBase:
         self._access_token_info: DabPumpsAccessTokenInfo = access_token_info or DabPumpsAccessTokenInfo()
         self._refresh_token_info: DabPumpsRefreshTokenInfo = refresh_token_info or DabPumpsRefreshTokenInfo()
         self._session_info: DabPumpsSessionInfo = DabPumpsSessionInfo()
-        
-        # Automatic refresh of access token or re-login
-        self._login_handler_start = flags.get(DabPumpsApiFlag.LOGIN_HANDLER_START, False)
-        self._login_handler_task = TaskHelper(
-            name="Relogin handler", 
-            action=self.login, 
-            repeat_timeout_min=LOGIN_REPEAT_TIMEOUT_MIN, 
-            repeat_timeout_max=LOGIN_REPEAT_TIMEOUT_MAX
-        )
 
         # Retrieved data
         self._install_map: dict[str, DabPumpsInstall] = {}              # install_id => install
@@ -324,8 +315,6 @@ class DabPumpsBase:
         context = f"login access_token reuse"
         self._update_diagnostics(utcnow(), context, None, None, self._access_token_info)
 
-        self._login_handler_task.schedule(self._access_token_info.expiry)
-
         #_LOGGER.debug(f"Reuse the access-token")
         return True
 
@@ -418,8 +407,6 @@ class DabPumpsBase:
             msg = f"No tokens found in response from {request["url"]}"
             _LOGGER.debug(msg)    # logged as warning after last retry
             raise DabPumpsTokenRefreshError(msg)
-
-        self._login_handler_task.schedule(self._access_token_info.expiry)
 
         # The refresh of the tokens succeeded
         _LOGGER.debug(f"Refreshed the access-token; original login used method {self._login_info.login_method}")
@@ -587,7 +574,6 @@ class DabPumpsBase:
         self._login_info = DabPumpsLoginInfo(
             login_method = method,
         )
-        self._login_handler_task.schedule(self._access_token_info.expiry)
 
         _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
         return True
@@ -646,7 +632,6 @@ class DabPumpsBase:
         self._login_info = DabPumpsLoginInfo(
             login_method = DabPumpsLogin.DCONNECT_APP,
         )
-        self._login_handler_task.schedule(self._access_token_info.expiry)
 
         _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
         return True
@@ -721,7 +706,6 @@ class DabPumpsBase:
         self._login_info = DabPumpsLoginInfo(
             login_method = DabPumpsLogin.DCONNECT_WEB,
         )
-        self._login_handler_task.schedule(self._access_token_info.expiry)
 
         _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
         return True
@@ -828,27 +812,8 @@ class DabPumpsBase:
         return True
 
 
-    def _start_login_handler(self):
-        """
-        Start our (re-)login handler loop
-        """
-        if self._login_handler_start and not self._login_handler_task.running:
-            self._login_handler_task.start()
-
-
-    def _stop_login_handler(self):
-        """
-        Stop our (re-)login handler loop
-        """
-        if self._login_handler_task.running:
-            self._login_handler_task.stop()
-
-
     def logout(self):
         """Logout from DAB Pumps"""
-
-        # Stop token refresh_handler
-        self._stop_login_handler()
 
         # Only one thread at a time can check token cookie and do subsequent login or logout if needed.
         # Once one thread is done, the next thread can then check the (new) token cookie.
@@ -878,9 +843,6 @@ class DabPumpsBase:
             expires_in = None,
             expiry = None,
         )
-
-        # Trigger repeated re-login attempts (will be cancelled if this is a real logout)
-        self._login_handler_task.schedule(None)   
 
 
     def _validate_token(self, token: str|None) -> str:

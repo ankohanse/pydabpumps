@@ -236,6 +236,7 @@ class DabPumpsAccessTokenInfo:
         if self.expiry and isinstance(self.expiry, str):
             self.expiry = datetime.fromisoformat(self.expiry)
 
+    @property
     def is_valid(self):
         return self.token is not None and self.expiry is not None and utcnow() < self.expiry
 
