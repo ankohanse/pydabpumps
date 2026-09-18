@@ -216,9 +216,6 @@ class AsyncDabPumpsBase:
         async with self._login_lock:
             await self._login(test_method=test_method)
 
-        # If needed, start our (re-)login handler
-        await self._start_login_handler()
-
 
     async def _login(self, test_method:DabPumpsLogin|List[DabPumpsLogin]=None):
         """Login to DAB Pumps by trying each of the possible login methods"""        

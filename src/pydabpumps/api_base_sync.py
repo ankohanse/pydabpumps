@@ -219,9 +219,6 @@ class DabPumpsBase:
         with self._login_lock:
             self._login(test_method=test_method)
 
-        # If needed, start our (re-)login handler
-        self._start_login_handler()
-
 
     def _login(self, test_method:DabPumpsLogin|List[DabPumpsLogin]=None):
         """Login to DAB Pumps by trying each of the possible login methods"""        
