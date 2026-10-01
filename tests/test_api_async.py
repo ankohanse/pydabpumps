@@ -301,7 +301,7 @@ async def test_get_data(name, method, loop, exp_except, request):
         
         except Exception as ex:
             counter_fail += 1
-            reason = str(ex)
+            reason = str(ex) or repr(ex)
             reason_fail[reason] = reason_fail[reason]+1 if reason in reason_fail else 1
             _LOGGER.warning(f"Fail: {ex}")
 

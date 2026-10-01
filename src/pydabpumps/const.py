@@ -49,6 +49,7 @@ DCONNECT_WEB_USER_AGENT = 'Dalvik/2.1.0 (Linux; U; Android 9; SM-G935F Build/PI)
 
 LOGIN_REPEAT_TIMEOUT_MIN = 60 # seconds
 LOGIN_REPEAT_TIMEOUT_MAX = 5*60 # seconds
+TOKEN_REFRESH_RETRY_LIMIT = 50
 
 # WAMP is used for push messages from the H2D servers
 WAMP_URL = 'wss://dconnect.dabpumps.com/wsapp'

@@ -236,7 +236,7 @@ class AsyncDabPumps(AsyncDabPumpsBase):
             return True
 
         except Exception as e:
-            _LOGGER.debug(f"Unable to start Wamp session, got exception '{str(e)}'")
+            _LOGGER.debug(f"Unable to start Wamp session, got exception '{str(e) or repr(e)}'")
             return False
 
 
@@ -383,7 +383,7 @@ class AsyncDabPumps(AsyncDabPumpsBase):
                         await info.callback(serial, state_new)
 
                     except Exception as e:
-                        _LOGGER.debug(f"Exception while calling callback: {str(e)}")
+                        _LOGGER.debug(f"Exception while calling callback: {str(e) or repr(e)}")
 
 
             case _:
@@ -418,7 +418,7 @@ class AsyncDabPumps(AsyncDabPumpsBase):
         # Flag all previous subscribe requests as cancelled so they can be resubmitted once we rejoin
         await self._wamp_subscribe_cancelled()
 
-        # Trigger a delayed reconnect attempt
+        # Trigger a (delayed) reconnect attempt
         await self._wamp_reconnect_task.schedule(utcnow() + timedelta(seconds=WAMP_RECONNECT_DELAY))
 
 

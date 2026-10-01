@@ -58,6 +58,7 @@ from .const import (
     DEVICE_ATTR_EXTRA,
     STATUS_UPDATE_HOLD,
     HTTPX_REQUEST_TIMEOUT,
+    TOKEN_REFRESH_RETRY_LIMIT,
     utcnow,
     utcmin,
 )
@@ -367,18 +368,25 @@ class DabPumpsBase:
                 msg = f"Error response while trying to refresh the token: '{descr}' [{error}]"
                 _LOGGER.debug(msg)
 
-                if error in ["invalid_client"]:
+                if error in ["invalid_client", "invalid_grant"]:
                     # Refresh token is no longer valid; silently continue to the next login method
                     return False
                 else:
                     # Token refresh failed because of unknown error.
-                    # We must assume the refresh_token is still valid. Bail out of the login process.
-                    raise DabPumpsTokenRefreshError(msg)
+                    if self._refresh_token_info.retries < TOKEN_REFRESH_RETRY_LIMIT:
+                        # We must assume the refresh_token is still valid. Bail out of the login process.
+                        self._refresh_token_info.retries += 1
+                        raise DabPumpsTokenRefreshError(msg)
+                    else:
+                        # Too many retries of the refresh; continue to the next login method
+                        _LOGGER.debug(f"Token refresh retries exceeded. Trying fresh login.")
+                        self._refresh_token_info.retries = 0
+                        return False
 
         except Exception as ex:
             # Token refresh failed because of communication error.
             # We must assume the refresh_token is still valid. Bail out of the login process.
-            msg = f"Exception while trying to refresh the token: {ex}"
+            msg = f"Exception while trying to refresh the token: {str(ex) or repr(ex)}"
             _LOGGER.debug(msg)
             raise DabPumpsTokenRefreshError(msg)
 
@@ -1295,7 +1303,7 @@ class DabPumpsBase:
                 self.set_status_update(serial, item_key, None)
 
             except Exception as e:
-                _LOGGER.warning(f"Exception while processing status for '{serial}:{item_key}': {e}")
+                _LOGGER.warning(f"Exception while processing status for '{serial}:{item_key}': {str(e) or repr(e)}")
 
         return DabPumpsDeviceState(
             status_ts = max(status_ts, lastrecv_ts),
@@ -1708,7 +1716,7 @@ class DabPumpsBase:
             raise DabPumpsConnectError(error)
 
         except Exception as ex:
-            error = f"Request failed: exception '{ex}' while trying to reach {request["url"]}"
+            error = f"Request failed: exception '{str(ex) or repr(ex)}' while trying to reach {request["url"]}"
             _LOGGER.debug(error)
 
             if flags_authorize:

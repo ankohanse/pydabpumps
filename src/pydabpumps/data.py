@@ -248,6 +248,7 @@ class DabPumpsRefreshTokenInfo:
     expiry: datetime = None # utc
     client_id: str = None
     client_secret: str = None
+    retries: int = 0
 
     def __post_init__(self):
         """

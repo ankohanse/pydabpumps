@@ -95,10 +95,10 @@ class AsyncTaskHelper:
                     await self._action()
 
                 except Exception as e:
-                    _LOGGER.debug(f"{self._name} caught exception: {e} while performing action")
+                    _LOGGER.debug(f"{self._name} caught exception: {str(e) or repr(e)} while performing action")
 
             except Exception as ex:
-                _LOGGER.debug(f"{self._name} caught exception: {ex}")
+                _LOGGER.debug(f"{self._name} caught exception: {str(ex) or repr(ex)}")
 
         _LOGGER.debug(f"{self._name} stopped")
         return True
