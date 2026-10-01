@@ -304,7 +304,7 @@ def test_get_data(name, method, loop, exp_except, request):
         
         except Exception as ex:
             counter_fail += 1
-            reason = str(ex)
+            reason = str(ex) or repr(ex)
             reason_fail[reason] = reason_fail[reason]+1 if reason in reason_fail else 1
             _LOGGER.warning(f"Fail: {ex}")
 
@@ -372,7 +372,7 @@ def test_push_data(name, method, loop, exp_push, exp_except, request):
         nonlocal counter_handler
         counter_handler += 1
 
-    if context.framework not in ['async']:
+    if context.framework != 'async':
         # Push functionality is only supported in the async framework, not in the sync one
         for device_serial in context.api.device_map.keys():
             with pytest.raises(NotImplementedError):
