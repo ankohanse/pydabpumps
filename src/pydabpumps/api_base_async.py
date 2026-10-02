@@ -1260,7 +1260,7 @@ class AsyncDabPumpsBase:
         elif isinstance(lastrecv, str):
             lastrecv_ts = datetime.fromisoformat(lastrecv)
         else:
-            lastrecv_ts = utcmin()
+            lastrecv_ts = utcnow()
 
         if isinstance(values, str):
             items = json.loads(values)
