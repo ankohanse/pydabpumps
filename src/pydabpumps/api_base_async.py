@@ -380,32 +380,27 @@ class AsyncDabPumpsBase:
             error = result.get('error')
             descr = result.get('error_description')
 
-            if error is not None:
-                if error in ["invalid_client", "invalid_grant"]:
-                    _LOGGER.debug(f"Refresh token is no longer valid. Trying fresh login")
+        except Exception as ex:
+            error = ex.__class__.__name__
+            descr = '; '.join([str(a) for a in ex.args])
+
+        if error is not None:
+            if error in ["invalid_client", "invalid_grant"]:
+                _LOGGER.debug(f"Refresh token is no longer valid. Trying fresh login")
+                self._refresh_token_info = DabPumpsRefreshTokenInfo()
+                return False
+            else:
+                # Token refresh failed because of unknown error.
+                # We must assume the refresh_token may still be valid, so will retry a couple of times
+                if self._refresh_token_info.retry_count < TOKEN_REFRESH_RETRY_LIMIT:
+                    # Bail out of the login process.
+                    _LOGGER.debug(f"Token refresh failed: '{descr}' [{error}]. Attempt {self._refresh_token_info.retry_count+1} of {TOKEN_REFRESH_RETRY_LIMIT} allowed in {round(delay)} seconds")
+                    raise DabPumpsLoginAbortedError(f"Token refresh failed: '{descr}' [{error}]")
+                else:
+                    # Too many retries of the refresh; continue to the next login method
+                    _LOGGER.debug(f"Token refresh failed: '{descr}' [{error}]. Trying fresh login.")
                     self._refresh_token_info = DabPumpsRefreshTokenInfo()
                     return False
-                else:
-                    # Token refresh failed because of unknown error.
-                    # We must assume the refresh_token may still be valid., so will retry a couple of times
-                    if self._refresh_token_info.retry_count < TOKEN_REFRESH_RETRY_LIMIT:
-                        # Bail out of the login process.
-                        _LOGGER.debug(f"Token refresh failed: '{descr}' [{error}]. Attempt {self._refresh_token_info.retry_count+1} of {TOKEN_REFRESH_RETRY_LIMIT} allowed in {round(delay)} seconds")
-                        raise DabPumpsLoginAbortedError(f"Token refresh failed: '{descr}' [{error}]")
-                    else:
-                        # Too many retries of the refresh; continue to the next login method
-                        _LOGGER.debug(f"Token refresh failed: '{descr}' [{error}]. Trying fresh login.")
-                        self._refresh_token_info = DabPumpsRefreshTokenInfo()
-                        return False
-
-        except DabPumpsLoginAbortedError as e:
-            raise
-
-        except Exception as ex:
-            # Token refresh failed because of communication error.
-            # We must assume the refresh_token is still valid. Bail out of the login process.
-            _LOGGER.debug(f"Exception while trying to refresh the token: {str(ex) or repr(ex)}")
-            raise DabPumpsAuthError(ex)
 
         # Store access-token in variable so it will be added as Authorization header in calls to DABCS and DConnect
         # We do not need to store the new access-token as cookie, those take care of their own refresh
@@ -668,6 +663,8 @@ class AsyncDabPumpsBase:
         # if we reach this point then the token was OK
         self._login_info = DabPumpsLoginInfo(
             login_method = DabPumpsLogin.DCONNECT_APP,
+            retry_schedule = utcnow() + timedelta(seconds=LOGIN_DELAY_MIN),
+            retry_count = 0,
         )
 
         _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
@@ -742,6 +739,8 @@ class AsyncDabPumpsBase:
         # Set other login parameters
         self._login_info = DabPumpsLoginInfo(
             login_method = DabPumpsLogin.DCONNECT_WEB,
+            retry_schedule = utcnow() + timedelta(seconds=LOGIN_DELAY_MIN),
+            retry_count = 0,
         )
 
         _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
