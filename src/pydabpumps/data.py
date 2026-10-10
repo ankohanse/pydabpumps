@@ -17,6 +17,7 @@ from .const import (
     H2D_APP_DABCS_AUTH,
     H2D_APP_USER_AGENT,
     utcnow,
+    utcmin,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -25,8 +26,12 @@ _LOGGER = logging.getLogger(__name__)
 class DabPumpsError(Exception):
     """Exception to indicate generic error failure."""    
 
-class DabPumpsTokenRefreshError(DabPumpsError):
-    """Exception to indicate that token refresh failed but refresh token should still be valid."""
+class DabPumpsLoginAbortedError(DabPumpsError):
+    """
+    Exception to indicate that login was aborted. Reasons could be:
+    - a rate-limit was applied during login or token refresh
+    - an error occurred but the refresh token itself is still assumed valid.
+    """
 
 class DabPumpsConnectError(DabPumpsError):
     """Exception to indicate authentication failure."""
@@ -181,7 +186,18 @@ class DabPumpsDeviceState:
 class DabPumpsLoginInfo:
     login_method: DabPumpsLogin = None
 
+    retry_schedule: datetime = utcmin()
+    retry_count: int = 0
+
     _dabcs_device: ClassVar[str] = secrets.token_hex(8)  # Static class variable, never to be changed after init
+
+    def __post_init__(self):
+        """
+        Custom processing in case the dataclass was constructed from a dict
+        info = DabPumpsLoginInfo(**dict)
+        """
+        if self.retry_schedule and isinstance(self.retry_schedule, str):
+            self.expiry = datetime.fromisoformat(self.retry_schedule)
 
     @property
     def fetch_method(self) -> DabPumpsFetch:
@@ -248,7 +264,9 @@ class DabPumpsRefreshTokenInfo:
     expiry: datetime = None # utc
     client_id: str = None
     client_secret: str = None
-    retries: int = 0
+
+    retry_schedule: datetime = utcmin()
+    retry_count: int = 0
 
     def __post_init__(self):
         """
@@ -257,6 +275,9 @@ class DabPumpsRefreshTokenInfo:
         """
         if self.expiry and isinstance(self.expiry, str):
             self.expiry = datetime.fromisoformat(self.expiry)
+
+        if self.retry_schedule and isinstance(self.retry_schedule, str):
+            self.expiry = datetime.fromisoformat(self.retry_schedule)
 
 
 @dataclass

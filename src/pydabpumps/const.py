@@ -47,9 +47,13 @@ DCONNECT_WEB_REDIRECT_URI = 'https://dconnect.dabpumps.com/sso?cameFrom=/dashboa
 DCONNECT_WEB_DABCS_AUTH = "vwLbTh3HKJdjHRHzdEHen43PyffAc9gK"
 DCONNECT_WEB_USER_AGENT = 'Dalvik/2.1.0 (Linux; U; Android 9; SM-G935F Build/PI)' # DConnect/2.13.1'
 
-LOGIN_REPEAT_TIMEOUT_MIN = 60 # seconds
-LOGIN_REPEAT_TIMEOUT_MAX = 5*60 # seconds
-TOKEN_REFRESH_RETRY_LIMIT = 50
+LOGIN_DELAY_MIN = 10*60 # 10 minutes in seconds
+LOGIN_DELAY_MAX = 30*60 # 30 minutes in seconds
+LOGIN_DELAY_INC =  5*60 # 5 minutes in seconds
+TOKEN_REFRESH_DELAY_MIN = 1*60 # 1 minute in seconds
+TOKEN_REFRESH_DELAY_MAX = 1*60 # 1 minute in seconds
+TOKEN_REFRESH_DELAY_INC = 0 # 0 minutes in seconds
+TOKEN_REFRESH_RETRY_LIMIT = 3
 
 # WAMP is used for push messages from the H2D servers
 WAMP_URL = 'wss://dconnect.dabpumps.com/wsapp'

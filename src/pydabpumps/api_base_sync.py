@@ -53,11 +53,15 @@ from .const import (
     DCONNECT_WEB_CLIENT_SECRET,
     DCONNECT_WEB_REDIRECT_URI,
     H2D_APP_USER_AGENT,
-    LOGIN_REPEAT_TIMEOUT_MIN,
-    LOGIN_REPEAT_TIMEOUT_MAX,
+    LOGIN_DELAY_MIN,
+    LOGIN_DELAY_MAX,
+    LOGIN_DELAY_INC,
     DEVICE_ATTR_EXTRA,
     STATUS_UPDATE_HOLD,
     HTTPX_REQUEST_TIMEOUT,
+    TOKEN_REFRESH_DELAY_INC,
+    TOKEN_REFRESH_DELAY_MAX,
+    TOKEN_REFRESH_DELAY_MIN,
     TOKEN_REFRESH_RETRY_LIMIT,
     utcnow,
     utcmin,
@@ -66,7 +70,7 @@ from .const import (
 from .data import (
     DabPumpsApiFlag,
     DabPumpsError,
-    DabPumpsTokenRefreshError,
+    DabPumpsLoginAbortedError,
     DabPumpsConnectError,
     DabPumpsAuthError,
     DabPumpsDataError,
@@ -274,10 +278,11 @@ class DabPumpsBase:
                     self._login_active = True
                     return 
 
-            except DabPumpsTokenRefreshError as tre:
-                # An error occurred during token refresh, but the refresh token itself is still assumed valid.
+            except DabPumpsLoginAbortedError as e:
+                # A rate-limit is applied during an actual login or token refresh
+                # or an error occurred but the refresh token itself is still assumed valid.
                 # Bail out of the login process.
-                error = tre
+                error = e
                 break
 
             except Exception as ex:
@@ -334,7 +339,21 @@ class DabPumpsBase:
             # If we get to this point then somehow the access-token and refresh-token cookies
             # have expired; silently continue to the next login method 
             return False
+
+        # Rate limit: although DAB Pumps does not seem to block user accounts if too many 
+        # refresh attemps occur within a timeframe, we are cautious and do limit the number 
+        # of requests somewhat.
+        if self._refresh_token_info.retry_schedule > utcnow():
+            delay = (self._refresh_token_info.retry_schedule-utcnow()).total_seconds()
+            _LOGGER.debug(f"Token refresh rate-limited. Attempt {self._refresh_token_info.retry_count+1} of {TOKEN_REFRESH_RETRY_LIMIT} allowed in {round(delay)} seconds")
+            raise DabPumpsLoginAbortedError("Token refresh rate-limited")
         
+        else:
+            # Prepare the next attempt schedule in case this token refresh fails
+            delay = min(TOKEN_REFRESH_DELAY_MIN + TOKEN_REFRESH_DELAY_INC ** self._refresh_token_info.retry_count, TOKEN_REFRESH_DELAY_MAX)
+            self._refresh_token_info.retry_schedule = utcnow() + timedelta(seconds=delay)
+            self._refresh_token_info.retry_count += 1
+
         # Don't bother to check the contents of the refresh token, 
         # just attempt to request a new access token via the refresh token
         context = f"login access_token refresh"
@@ -365,30 +384,31 @@ class DabPumpsBase:
             descr = result.get('error_description')
 
             if error is not None:
-                msg = f"Error response while trying to refresh the token: '{descr}' [{error}]"
-                _LOGGER.debug(msg)
-
                 if error in ["invalid_client", "invalid_grant"]:
-                    # Refresh token is no longer valid; silently continue to the next login method
+                    _LOGGER.debug(f"Refresh token is no longer valid. Trying fresh login")
+                    self._refresh_token_info = DabPumpsRefreshTokenInfo()
                     return False
                 else:
                     # Token refresh failed because of unknown error.
-                    if self._refresh_token_info.retries < TOKEN_REFRESH_RETRY_LIMIT:
-                        # We must assume the refresh_token is still valid. Bail out of the login process.
-                        self._refresh_token_info.retries += 1
-                        raise DabPumpsTokenRefreshError(msg)
+                    # We must assume the refresh_token may still be valid., so will retry a couple of times
+                    if self._refresh_token_info.retry_count < TOKEN_REFRESH_RETRY_LIMIT:
+                        # Bail out of the login process.
+                        _LOGGER.debug(f"Token refresh failed: '{descr}' [{error}]. Attempt {self._refresh_token_info.retry_count+1} of {TOKEN_REFRESH_RETRY_LIMIT} allowed in {round(delay)} seconds")
+                        raise DabPumpsLoginAbortedError(f"Token refresh failed: '{descr}' [{error}]")
                     else:
                         # Too many retries of the refresh; continue to the next login method
-                        _LOGGER.debug(f"Token refresh retries exceeded. Trying fresh login.")
-                        self._refresh_token_info.retries = 0
+                        _LOGGER.debug(f"Token refresh failed: '{descr}' [{error}]. Trying fresh login.")
+                        self._refresh_token_info = DabPumpsRefreshTokenInfo()
                         return False
+
+        except DabPumpsLoginAbortedError as e:
+            raise
 
         except Exception as ex:
             # Token refresh failed because of communication error.
             # We must assume the refresh_token is still valid. Bail out of the login process.
-            msg = f"Exception while trying to refresh the token: {str(ex) or repr(ex)}"
-            _LOGGER.debug(msg)
-            raise DabPumpsTokenRefreshError(msg)
+            _LOGGER.debug(f"Exception while trying to refresh the token: {str(ex) or repr(ex)}")
+            raise DabPumpsAuthError(ex)
 
         # Store access-token in variable so it will be added as Authorization header in calls to DABCS and DConnect
         # We do not need to store the new access-token as cookie, those take care of their own refresh
@@ -409,9 +429,9 @@ class DabPumpsBase:
         )
 
         if not self._access_token_info.token or not self._refresh_token_info.token:
-            msg = f"No tokens found in response from {request["url"]}"
-            _LOGGER.debug(msg)    # logged as warning after last retry
-            raise DabPumpsTokenRefreshError(msg)
+            error = f"No tokens found in response from {request["url"]}"
+            _LOGGER.debug(error)    # logged as warning after last retry
+            raise DabPumpsAuthError(error)
 
         # The refresh of the tokens succeeded
         _LOGGER.debug(f"Refreshed the access-token; original login used method {self._login_info.login_method}")
@@ -422,6 +442,19 @@ class DabPumpsBase:
         """
         Login to DAB Pumps via the unified dabsso method as used by the H2D app and DAB Live app
         """
+
+        # Rate limit: DAB Pumps will block user accounts if too many attemps occur within a timeframe
+        # We do not know the exact constraints for this limit.
+        if self._login_info.retry_schedule > utcnow():
+            delay = (self._login_info.retry_schedule-utcnow()).total_seconds()
+            _LOGGER.debug(f"Login rate-limited. Next attempt allowed in {math.ceil(delay/60)} minutes")
+            raise DabPumpsLoginAbortedError("Login rate-limited")
+        
+        else:
+            # Prepare the next attempt schedule in case this login fails
+            delay = min(LOGIN_DELAY_MIN + LOGIN_DELAY_INC ** self._login_info.retry_count, LOGIN_DELAY_MAX)
+            self._login_info.retry_schedule = utcnow() + timedelta(seconds=delay)
+            self._login_info.retry_count += 1
 
         # Step 0: generate an unique state and a code challenge
         state_bytes = os.urandom(16)
@@ -578,6 +611,8 @@ class DabPumpsBase:
         # if we reach this point then the token was OK
         self._login_info = DabPumpsLoginInfo(
             login_method = method,
+            retry_schedule = utcnow() + timedelta(seconds=LOGIN_DELAY_MIN),
+            retry_count = 0,
         )
 
         _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
