@@ -197,7 +197,7 @@ class DabPumpsLoginInfo:
         info = DabPumpsLoginInfo(**dict)
         """
         if self.retry_schedule and isinstance(self.retry_schedule, str):
-            self.expiry = datetime.fromisoformat(self.retry_schedule)
+            self.retry_schedule = datetime.fromisoformat(self.retry_schedule)
 
     @property
     def fetch_method(self) -> DabPumpsFetch:
@@ -277,7 +277,7 @@ class DabPumpsRefreshTokenInfo:
             self.expiry = datetime.fromisoformat(self.expiry)
 
         if self.retry_schedule and isinstance(self.retry_schedule, str):
-            self.expiry = datetime.fromisoformat(self.retry_schedule)
+            self.retry_schedule = datetime.fromisoformat(self.retry_schedule)
 
 
 @dataclass
