@@ -8,6 +8,7 @@ from .data import (
     DabPumpsConnectError, 
     DabPumpsAuthError, 
     DabPumpsDataError, 
+    DabPumpsLoginAbortedError,
     DabPumpsError, 
     DabPumpsUserRole,
     DabPumpsParamType,
