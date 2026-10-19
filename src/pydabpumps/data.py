@@ -178,6 +178,9 @@ class DabPumpsDeviceState:
         if self.status_ts and isinstance(self.status_ts, str):
             self.status_ts = datetime.fromisoformat(self.status_ts)
 
+        if self.lastrecv_ts and isinstance(self.lastrecv_ts, str):
+            self.lastrecv_ts = datetime.fromisoformat(self.lastrecv_ts)
+
         for item_key in self.status:
             item_status = self.status[item_key]
 
