@@ -71,13 +71,14 @@ WAMP_REPEAT_TIMEOUT_MAX = 60*60 # seconds
 # Period to prevent status updates when value was recently updated
 STATUS_UPDATE_HOLD = 30 # seconds
 
+HTTPX_REQUEST_TIMEOUT = 20.0
+
+
 # Extra device attributes that are not in install info, but retrieved from statuses
 DEVICE_ATTR_EXTRA = {
     "mac_address": ['MacWlan'],
     "sw_version": ['LvFwVersion', 'LvVersion', 'ucVersion']
 }
-
-HTTPX_REQUEST_TIMEOUT = 20.0
 
 
 # Global helper functions

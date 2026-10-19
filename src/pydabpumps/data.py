@@ -164,8 +164,11 @@ class DabPumpsStatus:
 
 @dataclass
 class DabPumpsDeviceState:
-    status_ts: datetime|None # utc
     status: dict[str, DabPumpsStatus]
+    status_ts: datetime = None # utc
+    lastrecv_ts: datetime = None # utc
+    online: bool = True
+    state: str = None   # Note: only updated in fetch_install_statuses, not from push data
 
     def __post_init__(self):
         """

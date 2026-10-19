@@ -916,13 +916,16 @@ async def config_map():
 async def state_map():
     state_map = {
         'SERIAL': DabPumpsDeviceState(
-            status_ts = utcnow(),
             status = {
                 'KEY_ENUM':  DabPumpsStatus(code='1', value='one'),
                 'KEY_FLOAT': DabPumpsStatus(code='1', value=0.1),
                 'KEY_INT':   DabPumpsStatus(code='1', value=1),
                 'KEY_LABEL': DabPumpsStatus(code='ABC', value='ABC'),
             },
+            status_ts = utcnow(),
+            lastrecv_ts = utcnow(),
+            online = True,
+            state = "OK",
         )
     }
     yield state_map

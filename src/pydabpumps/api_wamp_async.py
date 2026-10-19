@@ -356,23 +356,20 @@ class AsyncDabPumps(AsyncDabPumpsBase):
                 }
                 await self._update_diagnostics(timestamp, context, None, response)
 
-                # {
-                #   "status": {
-                #      "HO_PowerOnHours": "76008",
-                #      "MainLoopTime": "1418"
-                #   },
-                #   "statusts": 1781583879599
-                # }
-                statusts = data.get('statusts') or None
-                status = data.get('status') or {}
-
                 # Merge with existing statuses for this device
-                state_new = self._parse_device_state(serial, statusts, None, status)
+                # {
+                #   "statusts": unix_timestamp,
+                #   "status": { "key1": "value1", "key2": "value2", ... }
+                # }
+                state_new = self._parse_device_state(serial=serial, data=data)
                 state_old = self._device_state_map.get(serial) or DabPumpsDeviceState()
 
                 self._device_state_map[serial] = DabPumpsDeviceState(
-                    status_ts = max(state_old.status_ts, state_new.status_ts),
                     status = state_old.status | state_new.status,
+                    status_ts = max( (x for x in [state_old.status_ts, state_new.status_ts] if x is not None), default=None),
+                    lastrecv_ts = utcnow(),
+                    online = True,
+                    state = state_old.state,
                 )
 
                 _LOGGER.debug(f"State updated for '{serial}' with {len(state_new.status)} values")
@@ -384,7 +381,6 @@ class AsyncDabPumps(AsyncDabPumpsBase):
 
                     except Exception as e:
                         _LOGGER.debug(f"Exception while calling callback: {str(e) or repr(e)}")
-
 
             case _:
                 _LOGGER.warning(f"Encountered an unknown subscription type '{info.type}'. Please contact the integration developer to have this resolved.")

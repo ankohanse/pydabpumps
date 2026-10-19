@@ -85,15 +85,20 @@ async def main():
             #    logger.info(f"        {k}: {v}")
 
 
-        async def show_device_state(serial: str, device_state: DabPumpsDeviceState = None):
+        async def show_device_state(serial: str, device_state_new: DabPumpsDeviceState = None):
             # Helper function to show updated or all device statuses
             device = api.device_map.get(serial)
-            device_state = device_state or api.device_state_map.get(serial)
+            device_state = api.device_state_map.get(serial)
+            device_state_new = device_state_new or device_state
 
-            logger.info("")
             logger.info(f"State for {device.name}:")
-
-            for key,status in device_state.status.items():
+            logger.info(f"    online: {device_state_new.online} ({device_state.online})")
+            logger.info(f"    state: {device_state_new.state} ({device_state.state})")
+            logger.info(f"    status_ts: {device_state_new.status_ts} ({device_state.status_ts})")
+            logger.info(f"    lastrecv_ts: {device_state_new.lastrecv_ts} ({device_state.lastrecv_ts})")
+            logger.info(f"    ")
+            
+            for key,status in device_state_new.status.items():
                 if status.code in [DabPumpsStatusCode.HIDDEN]:
                     continue
                 
@@ -108,7 +113,9 @@ async def main():
                     logger.info(f"    {params.name}: {value_with_unit} ('{status.code}')")
                 else:
                     # Display real-life value, original encoded value is the same
-                    logger.info(f"    {params.name}: {value_with_unit}")                
+                    logger.info(f"    {params.name}: {value_with_unit}")  
+
+            logger.info("")
 
         # Show initial device states and subscribe to state updates
         for serial in api.device_map.keys():
@@ -116,18 +123,22 @@ async def main():
             await api.on_device_state(serial, show_device_state)
 
         # Keep the application alive
-        for t in range(60):
+        for t in range(1*60):
 
-            # In addition to waiting for push statuses to arrive, you can still
-            # poll for fresh statuses for all devices in this install
-            # await api.fetch_install_statuses(install_id)
+            if t % 10 == 0:
+                # In addition to waiting for push statuses to arrive, you can still
+                # poll for fresh statuses for all devices in this install
+                logger.info(f"")
+                logger.info(f"Fetch install statuses")
+                await api.login()
+                await api.fetch_install_statuses(install_id)
 
-            # for serial in api.device_map.keys():
-            #     await show_device_state(device.serial)
+                for serial in api.device_map.keys():
+                    await show_device_state(serial)
 
             # Wait one minute and retrieve install statuses again
-            logger.info("")
             logger.info(f"wait")
+            logger.info("")
             await asyncio.sleep(60)
 
     except Exception as e:

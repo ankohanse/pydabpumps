@@ -16,6 +16,7 @@ from pydabpumps import (
     DabPumpsStatus,
     DabPumpsParamType,
     DabPumpsUserRole,
+    utcnow,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,7 +32,7 @@ async def test_dict():
     config_obj2 = DabPumpsDeviceConfig(id="tst_id2", label="tst_label", description="tst_descr", meta_params={"param_key": param_obj})
     status_obj1 = DabPumpsStatus(code="1", value="one")
     status_obj2 = DabPumpsStatus(code="2", value="two")
-    state_obj = DabPumpsDeviceState(status={"tst_key1": status_obj1, "tst_key2": status_obj2}, status_ts=datetime.now(timezone.utc) )
+    state_obj = DabPumpsDeviceState(status={"tst_key1": status_obj1, "tst_key2": status_obj2}, status_ts=utcnow(), lastrecv_ts=utcnow(), online=True, state="OK")
 
     # Convert obj into dict
     install_dict1 = asdict(install_obj1)

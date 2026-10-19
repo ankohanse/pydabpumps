@@ -1221,9 +1221,7 @@ class DabPumpsBase:
     def _fetch_device_state(self, serial: str, raw_install_data: dict|None = None):
         """Fetch the statuses for a DAB Pumps device"""
 
-        statusts = None
-        lastrecv = None
-        status = {}
+        data = None
 
         match self._login_info.fetch_method:
             case DabPumpsFetch.DABCS:
@@ -1237,14 +1235,7 @@ class DabPumpsBase:
                 #   ]
                 # }
                 ins_dums = raw_install_data.get('dums') or []
-            
-                for dum in ins_dums:
-                    dum_serial = dum.get('serial') or ''
-                    if dum_serial == serial:
-                        statusts = dum.get('statusts') or ""
-                        lastrecv = dum.get('lastreceived') or ""
-                        status = dum.get('status') or {}
-                        break
+                data = next( (dum for dum in ins_dums if dum.get('serial') == serial), None)
         
             case DabPumpsFetch.DCONNECT: 
                 # Raw install data does not contain statuses when using this method.
@@ -1253,22 +1244,19 @@ class DabPumpsBase:
                 request = { "method": "GET", "url": DCONNECT_API_URL + f"/dumstate/{serial}" } # or f"/api/v1/dum/{serial}/state"
                 
                 _LOGGER.debug(f"Retrieve device statuses for '{serial}'")
-                raw = self._send_request(context, request)
-                
+
+                data = self._send_request(context, request)
                 # {
                 #   "statusts": "some_datetime",
                 #   "status": "{ "key1": "value1", "key2": "value2", ... }",   as string!
                 #   ...
                 # }
-                statusts = raw.get('statusts') or ""
-                lastrecv = raw.get('lastreceived') or ""
-                status = raw.get('status') or "{}" # string!
-
+                
             case _: 
                 return # not logged in
 
         # Process the resulting raw data
-        state = self._parse_device_state(serial, statusts, lastrecv, status)
+        state = self._parse_device_state(serial=serial, data=data)
 
         if len(state.status) == 0:
             raise DabPumpsDataError(f"No values found in state for '{serial}'")
@@ -1279,36 +1267,33 @@ class DabPumpsBase:
         self._device_state_map[serial] = state
         
 
-    def _parse_device_state(self, serial: str, statusts: Any, lastrecv: Any, values: Any) -> DabPumpsDeviceState:
+    def _parse_device_state(self, serial: str, data: dict) -> DabPumpsDeviceState:
         """
         Heper function to parse received data into a device state.
         Called when data is retrieved via a poll request or via a push from the remote DAB Pumps servers.
         """
 
-        if isinstance(statusts, (int,float)):
-            status_ts = datetime.fromtimestamp(statusts/1000.0, tz=timezone.utc)
-        elif isinstance(statusts, str):
-            status_ts = datetime.fromisoformat(statusts)
-        else:
-            status_ts = utcnow()
+        if data is None:
+            return DabPumpsDeviceState()
 
-        if isinstance(lastrecv, (int,float)):
-            lastrecv_ts = datetime.fromtimestamp(lastrecv/1000.0, tz=timezone.utc)
-        elif isinstance(lastrecv, str):
-            lastrecv_ts = datetime.fromisoformat(lastrecv)
-        else:
-            lastrecv_ts = utcnow()
+        # {
+        #   "statusts": "some_datetime",  or unix timestamp
+        #   "status": { "key1": "value1", "key2": "value2", ... },   possibly as string!
+        #   ...
+        # }
+        device_state = DabPumpsDeviceState(
+            status = {},
+            status_ts = self._as_datetime(data.get('statusts')),
+            lastrecv_ts = self._as_datetime(data.get('lastreceived')),
+            online = data.get('online'),
+            state = data.get('state') or data.get('dum_state'),
+        )
 
+        values = data.get('status') or {}
         if isinstance(values, str):
-            items = json.loads(values)
-        elif isinstance(values, dict):
-            items = values
-        else:
-            items = {}
+            values = json.loads(values)
 
-        status: dict[str, DabPumpsStatus] = {}
-
-        for item_key, item_code in items.items():
+        for item_key, item_code in values.items():
             try:
                 # Check if this status was recently updated via change_device_status
                 # We keep the updated value for a hold period to prevent it from flipping back and forth 
@@ -1320,7 +1305,7 @@ class DabPumpsBase:
                     (utcnow() - update_ts).total_seconds() < STATUS_UPDATE_HOLD:
 
                     _LOGGER.info(f"Skip refresh of recently updated status ({serial}.{item_key})")
-                    status[item_key] = status_old
+                    device_state.status[item_key] = status_old
                     continue
 
                 # Resolve the coded value into the real world value
@@ -1331,7 +1316,7 @@ class DabPumpsBase:
                     code = item_code,
                     value = item_val,
                 )
-                status[item_key] = status_new
+                device_state.status[item_key] = status_new
 
                 # Reset update flag
                 self.set_status_update(serial, item_key, None)
@@ -1339,12 +1324,18 @@ class DabPumpsBase:
             except Exception as e:
                 _LOGGER.warning(f"Exception while processing status for '{serial}:{item_key}': {str(e) or repr(e)}")
 
-        return DabPumpsDeviceState(
-            status_ts = max(status_ts, lastrecv_ts),
-            status = status,
-        )
+        return device_state
     
-        
+
+    def _as_datetime(self, value:Any) -> datetime:
+        if isinstance(value, (int,float)):
+            return datetime.fromtimestamp(value/1000.0, tz=timezone.utc)
+        elif isinstance(value, str):
+            return datetime.fromisoformat(value)
+        else:
+            return None
+
+       
     def _derive_device_details(self, serial: str):
         """
         Derive extra details for a DAB Pumps device
