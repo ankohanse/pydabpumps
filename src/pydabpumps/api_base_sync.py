@@ -1277,8 +1277,11 @@ class DabPumpsBase:
             return DabPumpsDeviceState()
 
         # {
-        #   "statusts": "some_datetime",  or unix timestamp
         #   "status": { "key1": "value1", "key2": "value2", ... },   possibly as string!
+        #   "statusts": "some_datetime",  or unix timestamp
+        #   "lastreceived": "some_datetime",
+        #   "online": true,
+        #   "state": "OK",
         #   ...
         # }
         device_state = DabPumpsDeviceState(
@@ -1503,7 +1506,7 @@ class DabPumpsBase:
         context = f"localization_{lang}"
         request = {
             "method": "GET",
-            "url": DCONNECT_API_URL + f"/resources/js/localization_{lang}.properties?format=JSON&fullmerge=1",
+            "url": DCONNECT_API_URL + f"/resources/js/localization_{lang}.properties?format=JSON&fullmerge=1&bundle=common,h2d",
             "headers": {
                 'User-Agent': H2D_APP_USER_AGENT,
             },

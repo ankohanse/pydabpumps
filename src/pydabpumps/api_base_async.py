@@ -1503,7 +1503,7 @@ class AsyncDabPumpsBase:
         context = f"localization_{lang}"
         request = {
             "method": "GET",
-            "url": DCONNECT_API_URL + f"/resources/js/localization_{lang}.properties?format=JSON&fullmerge=1",
+            "url": DCONNECT_API_URL + f"/resources/js/localization_{lang}.properties?format=JSON&fullmerge=1&bundle=common,h2d",
             "headers": {
                 'User-Agent': H2D_APP_USER_AGENT,
             },
