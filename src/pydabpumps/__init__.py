@@ -28,7 +28,7 @@ from .data import (
     DabPumpsSessionInfo,
     DabPumpsHistoryItem,
     DabPumpsHistoryDetail,
-    DabPumpsDictFactory,
+    to_dict,
 )
 
 # for unit tests

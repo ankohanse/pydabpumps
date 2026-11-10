@@ -2,24 +2,26 @@
 # src\pydabpumps\api_base_async.py
 """api_base.py: DabPumps API for DAB Pumps integration."""
 
+import anyio
+import asyncio
 import base64
 import hashlib
-import ssl
-import jwt
-import math
-import os
-import asyncio
 import httpx
 import json
+import jwt
 import logging
+import math
+import os
+import pathlib
 import re
+import ssl
+import threading
 
-from dataclasses import replace
+from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from typing import Any, List
 from urllib.parse import urlparse, parse_qs
 from uuid import UUID
-
 
 from .const import (
     DABLIVE_APP_USER_AGENT,
@@ -92,13 +94,8 @@ from .data import (
     DabPumpsSessionInfo,
     DabPumpsHistoryItem,
     DabPumpsHistoryDetail,
+    to_dict,
 )
-
-from .tasks import (
-    AsyncTaskHelper,
-    TaskHelper,
-)
-import threading
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -106,10 +103,11 @@ _LOGGER = logging.getLogger(__name__)
 # DabPumps api to detect device and get device info, fetch the actual data from the device, and parse it
 class DabPumpsBase:
     
-    def __init__(self, username, password, client:httpx.Client=None, ssl_context:ssl.SSLContext=None, login_info:DabPumpsLoginInfo=None, access_token_info:DabPumpsAccessTokenInfo=None, refresh_token_info:DabPumpsRefreshTokenInfo=None, flags:dict[DabPumpsApiFlag,Any] = {}):
+    def __init__(self, username, password, client:httpx.Client=None, ssl_context:ssl.SSLContext=None, login_info:DabPumpsLoginInfo=None, access_token_info:DabPumpsAccessTokenInfo=None, refresh_token_info:DabPumpsRefreshTokenInfo=None, persisted_info_path:str=None, flags:dict[DabPumpsApiFlag,Any]=None):
         # Configuration
         self._username: str = username
         self._password: str = password
+        self._flags: dict = flags if flags is not None else {}
 
         # Login data
         self._login_active: bool = False
@@ -117,6 +115,9 @@ class DabPumpsBase:
         self._access_token_info: DabPumpsAccessTokenInfo = access_token_info or DabPumpsAccessTokenInfo()
         self._refresh_token_info: DabPumpsRefreshTokenInfo = refresh_token_info or DabPumpsRefreshTokenInfo()
         self._session_info: DabPumpsSessionInfo = DabPumpsSessionInfo()
+
+        self._persisted_info_path: str = persisted_info_path
+        self._persisted_info_read: bool = False
 
         # Retrieved data
         self._install_map: dict[str, DabPumpsInstall] = {}              # install_id => install
@@ -241,12 +242,15 @@ class DabPumpsBase:
         elif isinstance(test_method, str):
             methods = [test_method]
         else:
+            # Try and read persisted tokens (once) so they can be checked in the steps below 
+            self._read_persisted_info()
+            
             methods = [DabPumpsLogin.ACCESS_TOKEN, DabPumpsLogin.REFRESH_TOKEN, DabPumpsLogin.H2D_APP]
             # Remove other login methods, old obsolete list is:
             #   methods = [DabPumpsLogin.ACCESS_TOKEN, DabPumpsLogin.REFRESH_TOKEN, self._login_info.login_method, DabPumpsLogin.H2D_APP, DabPumpsLogin.DABLIVE_APP, DabPumpsLogin.DCONNECT_APP]  
             #
             # DabPumpsLogin.DCONNECT_WEB was already removed because it does not support Wamp/Push data
-            
+
         for method in methods:
             try:
                 match method:
@@ -294,7 +298,7 @@ class DabPumpsBase:
         # if we reached this point then all methods failed.
         if error:
             raise error
-        
+
 
     def _login_access_token(self) -> bool:
         """Inspect whether the access token is still valid"""
@@ -343,7 +347,7 @@ class DabPumpsBase:
         # Rate limit: although DAB Pumps does not seem to block user accounts if too many 
         # refresh attemps occur within a timeframe, we are cautious and do limit the number 
         # of requests somewhat.
-        if self._refresh_token_info.retry_schedule > utcnow():
+        if self._refresh_token_info.retry_schedule > utcnow() and not DabPumpsApiFlag.IGNORE_RATE_LIMIT in self._flags:
             delay = (self._refresh_token_info.retry_schedule-utcnow()).total_seconds()
             _LOGGER.debug(f"Token refresh rate-limited. Attempt {self._refresh_token_info.retry_count+1} of {TOKEN_REFRESH_RETRY_LIMIT} allowed in {round(delay)} seconds")
             raise DabPumpsLoginAbortedError("Token refresh rate-limited")
@@ -428,6 +432,9 @@ class DabPumpsBase:
             _LOGGER.debug(error)    # logged as warning after last retry
             raise DabPumpsAuthError(error)
 
+        # Persist the new token info if needed
+        self._write_persisted_info()
+
         # The refresh of the tokens succeeded
         _LOGGER.debug(f"Refreshed the access-token; original login used method {self._login_info.login_method}")
         return True
@@ -440,7 +447,7 @@ class DabPumpsBase:
 
         # Rate limit: DAB Pumps will block user accounts if too many attemps occur within a timeframe
         # We do not know the exact constraints for this limit.
-        if self._login_info.retry_schedule > utcnow():
+        if self._login_info.retry_schedule > utcnow() and not DabPumpsApiFlag.IGNORE_RATE_LIMIT in self._flags:
             delay = (self._login_info.retry_schedule-utcnow()).total_seconds()
             _LOGGER.debug(f"Login rate-limited. Next attempt allowed in {math.ceil(delay/60)} minutes")
             raise DabPumpsLoginAbortedError("Login rate-limited")
@@ -610,6 +617,9 @@ class DabPumpsBase:
             retry_count = 0,
         )
 
+        # Persist the new token info if needed
+        self._write_persisted_info()
+
         _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
         return True
 
@@ -669,6 +679,9 @@ class DabPumpsBase:
             retry_schedule = utcnow() + timedelta(seconds=LOGIN_DELAY_MIN),
             retry_count = 0,
         )
+
+        # Persist the new token info if needed
+        self._write_persisted_info()
 
         _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
         return True
@@ -745,6 +758,9 @@ class DabPumpsBase:
             retry_schedule = utcnow() + timedelta(seconds=LOGIN_DELAY_MIN),
             retry_count = 0,
         )
+
+        # Persist the new token info if needed
+        self._write_persisted_info()
 
         _LOGGER.debug(f"Login succeeded using method {self._login_info.login_method}")
         return True
@@ -905,6 +921,50 @@ class DabPumpsBase:
 
         return utcnow() + timedelta(seconds=expires_in) - timedelta(seconds=margin)
 
+
+    def _read_persisted_info(self) -> bool:
+        """Try and read access and refresh token from file (only once)"""
+
+        if self._persisted_info_path is None or self._persisted_info_read:
+            # No read needed or already done
+            return
+        else:
+            # Flag reading as done regardless of whether the code below succeeds or fails
+            self._persisted_info_read = True   
+
+        _LOGGER.debug(f"Try read persisted token info")
+        try:
+            str = pathlib.Path(self._persisted_info_path).read_text()
+            data = json.loads(str)
+            login_dict = data.get("login_info", {})
+            access_token_dict = data.get("access_token_info", {})
+            refresh_token_dict = data.get("refresh_token_info", {})
+
+            self._login_info = DabPumpsLoginInfo(**login_dict)
+            self._access_token_info = DabPumpsAccessTokenInfo(**access_token_dict)
+            self._refresh_token_info = DabPumpsRefreshTokenInfo(**refresh_token_dict)
+        except:
+            pass
+
+
+    def _write_persisted_info(self) -> bool:
+        """Try and write access and refresh token into file"""
+
+        if self._persisted_info_path is None:
+            # No write needed
+            return
+        
+        _LOGGER.debug(f"Try write persisted tokens")
+        try:
+            data = {
+                "login_info": asdict(self._login_info),
+                "access_token_info": asdict(self._access_token_info),
+                "refresh_token_info": asdict(self._refresh_token_info),
+            }             
+            text = json.dumps(data, indent=2, default=str)
+            pathlib.Path(self._persisted_info_path).write_text(text)
+        except Exception as e:
+            pass
 
 
     def fetch_install_list(self):
@@ -1809,15 +1869,9 @@ class DabPumpsBase:
         if self._diagnostics_callback:
             item = DabPumpsHistoryItem.create(timestamp, context, request, response, token)
             detail = DabPumpsHistoryDetail.create(timestamp, context, request, response, token)
-            data = {
-                "login_info": self._login_info,
-                "access_token_info": self._access_token_info,
-                "refresh_token_info": self._refresh_token_info,
-                "session_info": self._session_info,
-
-                "string_map_lang": self.string_map_lang,
-            }
+            data = {}
 
             self._diagnostics_callback(context, item, detail, data)
+
     
 

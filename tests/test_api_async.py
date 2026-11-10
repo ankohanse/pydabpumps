@@ -1,12 +1,9 @@
 import asyncio
-import copy
-from dataclasses import asdict
-import json
 import logging
 import pytest
 import pytest_asyncio
 
-from datetime import date, datetime, timezone
+from datetime import datetime
 
 from pydabpumps import (
     AsyncDabPumps,
@@ -22,19 +19,12 @@ from pydabpumps import (
     DabPumpsStatus,
     DabPumpsParamType,
     DabPumpsUserRole,
-    DabPumpsLoginInfo,
-    DabPumpsAccessTokenInfo,
-    DabPumpsRefreshTokenInfo,
-    DabPumpsHistoryItem, 
-    DabPumpsHistoryDetail,
-    DabPumpsLogin,
-    DabPumpsFetch,
     utcnow,
     utcmin,
 )
 
 from . import TEST_USERNAME, TEST_PASSWORD
-from . import TEST_FRAMEWORK_ASYNC, TEST_FRAMEWORK_SYNC
+from . import TEST_FRAMEWORK_ASYNC, TEST_FRAMEWORK_SYNC, TEST_FLAGS, PERSISTED_INFO_PATH
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,76 +32,22 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
-TOKEN_FILE = ".test_cached_info.json"
-
-
 class TestContext:
     def __init__(self):
         self.framework = TEST_FRAMEWORK_ASYNC
-
         self.api: AsyncDabPumps = None
-        self.login_info = DabPumpsLoginInfo()
-        self.access_token_info = DabPumpsAccessTokenInfo()
-        self.refresh_token_info = DabPumpsRefreshTokenInfo()
         
-    async def init(self):
-        self._read_cached_info()
-
-        # Ignore rate limits
-        self.login_info.retry_schedule = utcmin()
-        self.refresh_token_info.retry_schedule = utcmin()
-
     async def cleanup(self):
-        self._write_cached_info()
-
         if self.api:
             await self.api.logout()
             await self.api.close()
             assert self.api.closed == True
-
-    def _read_cached_info(self):
-        try:
-            with open(TOKEN_FILE, 'r') as f:
-                data = json.load(f)
-                login_dict = data.get("login_info", {})
-                access_token_dict = data.get("access_token_info", {})
-                refresh_token_dict = data.get("refresh_token_info", {})
-
-                self.login_info = DabPumpsLoginInfo(**login_dict)
-                self.access_token_info = DabPumpsAccessTokenInfo(**access_token_dict)
-                self.refresh_token_info = DabPumpsRefreshTokenInfo(**refresh_token_dict)
-        except Exception as e:
-            pass
-
-    def _write_cached_info(self):
-        if self.api is None:
-            return
-
-        try:
-            with open(TOKEN_FILE, 'w') as f:
-                json.dump({
-                    "login_info": asdict(self.api.login_info, dict_factory=self.recursive_iso_factory),
-                    "access_token_info": asdict(self.api.access_token_info, dict_factory=self.recursive_iso_factory),
-                    "refresh_token_info": asdict(self.api.refresh_token_info, dict_factory=self.recursive_iso_factory),
-                }, f)
-        except Exception as e:
-            pass
-
-    def recursive_iso_factory(self, data):
-        result = {}
-        for k, v in data:
-            if isinstance(v, datetime) or isinstance(v, date):
-                result[k] = v.isoformat()
-            else:
-                result[k] = v
-        return result
 
 
 @pytest_asyncio.fixture
 async def context():
     # Prepare
     ctx = TestContext()
-    await ctx.init()
 
     # pass objects to tests
     yield ctx
@@ -253,12 +189,7 @@ async def test_get_data(name, method, loop, exp_except, request):
 
     # Use cached token if possible to reduce load on DAB Pumps auth server
     context = request.getfixturevalue("context")
-    context.api = AsyncDabPumps(
-        TEST_USERNAME, TEST_PASSWORD, 
-        login_info=context.login_info, 
-        access_token_info=context.access_token_info, 
-        refresh_token_info=context.refresh_token_info
-    )
+    context.api = AsyncDabPumps(TEST_USERNAME, TEST_PASSWORD, persisted_info_path=PERSISTED_INFO_PATH, flags=TEST_FLAGS)
     assert context.api.closed == False
 
     # Try set diagnostics callback function
@@ -410,12 +341,7 @@ async def test_get_data(name, method, loop, exp_except, request):
 async def test_push_data(name, method, loop, exp_push, exp_except, request):
     # Use cached token if possible to reduce load on DAB Pumps auth server
     context = request.getfixturevalue("context")
-    context.api = AsyncDabPumps(
-        TEST_USERNAME, TEST_PASSWORD, 
-        login_info=context.login_info, 
-        access_token_info=context.access_token_info, 
-        refresh_token_info=context.refresh_token_info
-    )
+    context.api = AsyncDabPumps(TEST_USERNAME, TEST_PASSWORD, persisted_info_path=PERSISTED_INFO_PATH, flags=TEST_FLAGS)
     assert context.api.closed == False
 
     # Try set diagnostics callback function
@@ -525,12 +451,7 @@ async def test_push_data(name, method, loop, exp_push, exp_except, request):
 async def test_set_data_by_code(method, key, codes, exp_code, exp_except, request):
     # Use cached token if possible to reduce load on DAB Pumps auth server
     context = request.getfixturevalue("context")
-    context.api = AsyncDabPumps(
-        TEST_USERNAME, TEST_PASSWORD, 
-        login_info=context.login_info, 
-        access_token_info=context.access_token_info, 
-        refresh_token_info=context.refresh_token_info
-    )
+    context.api = AsyncDabPumps(TEST_USERNAME, TEST_PASSWORD, persisted_info_path=PERSISTED_INFO_PATH, flags=TEST_FLAGS)
     assert context.api.closed == False
 
     # Login and get install list
@@ -628,12 +549,7 @@ async def test_set_data_by_code(method, key, codes, exp_code, exp_except, reques
 async def test_set_data_by_value(method, key, lang, exp_value, exp_except, request):
     # Use cached token if possible to reduce load on DAB Pumps auth server
     context = request.getfixturevalue("context")
-    context.api = AsyncDabPumps(
-        TEST_USERNAME, TEST_PASSWORD, 
-        login_info=context.login_info, 
-        access_token_info=context.access_token_info, 
-        refresh_token_info=context.refresh_token_info
-    )
+    context.api = AsyncDabPumps(TEST_USERNAME, TEST_PASSWORD, persisted_info_path=PERSISTED_INFO_PATH, flags=TEST_FLAGS)
     assert context.api.closed == False
 
     # Login and get install list
@@ -735,12 +651,7 @@ async def test_set_data_by_value(method, key, lang, exp_value, exp_except, reque
 async def test_set_role(method, exp_except, request):
     # Use cached token if possible to reduce load on DAB Pumps auth server
     context = request.getfixturevalue("context")
-    context.api = AsyncDabPumps(
-        TEST_USERNAME, TEST_PASSWORD, 
-        login_info=context.login_info, 
-        access_token_info=context.access_token_info, 
-        refresh_token_info=context.refresh_token_info
-    )
+    context.api = AsyncDabPumps(TEST_USERNAME, TEST_PASSWORD, persisted_info_path=PERSISTED_INFO_PATH, flags=TEST_FLAGS)
     assert context.api.closed == False
 
     # Login and get install list
@@ -822,32 +733,35 @@ async def test_strings(name, lang, exp_lang, request):
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("context")
 @pytest.mark.parametrize(
-    "name, method, exp_d, exp_except",
+    "name, method, exp_except",
     [
-        ("ok",  None,                        3, None),
-        #("ok",  DabPumpsLogin.H2D_APP,       3, None),
-        #("ok",  DabPumpsLogin.DABLIVE_APP,   3, None),
-        #("ok",  DabPumpsLogin.DCONNECT_APP,  1, None),
-        #("ok",  DabPumpsLogin.DCONNECT_WEB,  2, None),
+        ("ok",  None,                        None),
+        #("ok",  DabPumpsLogin.H2D_APP,       None),
+        #("ok",  DabPumpsLogin.DABLIVE_APP,   None),
+        #("ok",  DabPumpsLogin.DCONNECT_APP,  None),
+        #("ok",  DabPumpsLogin.DCONNECT_WEB,  None),
     ]
 )
-async def test_callbacks(name, method, exp_d, exp_except, request):
+async def test_callbacks(name, method, exp_except, request):
     # Use cached token if possible to reduce load on DAB Pumps auth server
     context = request.getfixturevalue("context")
-    context.api = AsyncDabPumps(
-        TEST_USERNAME, TEST_PASSWORD, 
-        login_info=context.login_info, 
-        access_token_info=context.access_token_info, 
-        refresh_token_info=context.refresh_token_info
-    )
+    context.api = AsyncDabPumps(TEST_USERNAME, TEST_PASSWORD, persisted_info_path=PERSISTED_INFO_PATH, flags=TEST_FLAGS)
     assert context.api.closed == False
 
     # Set diagnostics callback functions
-    counter_diagnostics = 0
+    diag_counter_prev = 0
+    diag_counter = 0
+    diag_items = []
+    diag_details = []
 
     def diagnostics_updated(context,item,detail,data): 
-        nonlocal counter_diagnostics
-        counter_diagnostics += 1
+        nonlocal diag_counter
+        nonlocal diag_items
+        nonlocal diag_details
+
+        diag_counter += 1
+        diag_items.append(item)
+        diag_details.append(detail)
 
     context.api.set_diagnostics(callback=diagnostics_updated)
 
@@ -856,27 +770,24 @@ async def test_callbacks(name, method, exp_d, exp_except, request):
 
     assert context.api.login_active
     assert context.api.login_info.login_method is not None
-    assert counter_diagnostics == exp_d
+    assert diag_counter >= diag_counter_prev
+    diag_counter_prev = diag_counter
 
-    # Do some more api calls; shouldn't change info and token counters since tokens are still valid
+    # Do some more api calls
     await context.api.fetch_install_list()
-
-    assert counter_diagnostics >= exp_d + 1
+    assert diag_counter >= diag_counter_prev + 1
+    diag_counter_prev = diag_counter
 
     # Get first install details, metadata and initial statuses
     install = next( (install for install in context.api.install_map.values()), None)
     assert install is not None
     install_id = install.id
     
-    # Repeat the login; shouldn't change info and token counters since tokens are still valid
-    await context.api.login()
-    
-    assert counter_diagnostics >= exp_d + 2
-
-    # Do some more api calls; shouldn't change info and token counters since tokens are still valid
+    # Do some more api calls
     await context.api.fetch_install_details(install_id)
 
-    assert counter_diagnostics >= exp_d + 3
+    assert diag_counter >= diag_counter_prev + 1
+    diag_counter_prev = diag_counter
 
 
 @pytest.mark.asyncio
@@ -885,21 +796,12 @@ async def test_callbacks(name, method, exp_d, exp_except, request):
     "name, method, exp_except",
     [
         ("ok",  None,                        None),
-        #("ok",  DabPumpsLogin.H2D_APP,       None),
-        #("ok",  DabPumpsLogin.DABLIVE_APP,   None),
-        #("ok",  DabPumpsLogin.DCONNECT_APP,  None),
-        # ("ok",  DabPumpsLogin.DCONNECT_WEB,  None), Skipped because access and refresh tokens are handled via cookies
     ]
 )
 async def test_token_reuse(name, method, exp_except, request):
     # Use cached token if possible to reduce load on DAB Pumps auth server
     context = request.getfixturevalue("context")
-    context.api = AsyncDabPumps(
-        TEST_USERNAME, TEST_PASSWORD, 
-        login_info=context.login_info, 
-        access_token_info=context.access_token_info, 
-        refresh_token_info=context.refresh_token_info
-    )
+    context.api = AsyncDabPumps(TEST_USERNAME, TEST_PASSWORD, persisted_info_path=PERSISTED_INFO_PATH, flags=TEST_FLAGS)
     assert context.api.closed == False
 
     # Set login info, token and diagnostics callback functions

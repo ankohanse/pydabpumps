@@ -1,10 +1,11 @@
-from datetime import datetime
+from datetime import date, datetime
 import logging
 import secrets
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, is_dataclass
 from enum import StrEnum
-from typing import ClassVar
+from types import MappingProxyType, NoneType
+from typing import Any, ClassVar, Iterable, Mapping, Set
 
 from .const import (
     DABCS_API_DOMAIN,
@@ -45,7 +46,7 @@ class DabPumpsDataError(DabPumpsError):
 
 class DabPumpsApiFlag(StrEnum):
     """Extra flags to pass to Api"""
-    LOGIN_HANDLER_START   = "LOGIN_HANDLER_START"   # bool
+    IGNORE_RATE_LIMIT   = "IGNORE_RATE_LIMIT"   # bool
 
 class DabPumpsLogin(StrEnum):
     ACCESS_TOKEN = 'Access-Token'
@@ -345,13 +346,72 @@ class DabPumpsHistoryDetail:
         return detail
 
 
-class DabPumpsDictFactory:
-    @staticmethod
-    def exclude_none_values(x):
+DATACLASSES_EXCLUDE_NONE = (DabPumpsHistoryItem, DabPumpsHistoryDetail)
+
+
+def to_dict(obj: Any, flags:set[str]=None) -> Any:
         """
-        Usage:
-          item = DabPumpsHistoryItem(...)
-          item_as_dict = asdict(item, dict_factory=DabPumpsDictFactory.exclude_none_values)
+        Recursive to dictionary handler that is aware of dataclasses and Mapping proxies at any level in the data structure
         """
-        return { k: v for (k, v) in x if v is not None }
+        # Sanity check
+        if flags is None:
+            flags = set()
+
+        try:
+            if isinstance(obj, (int,float,str,NoneType)):
+                return obj
+            
+            elif isinstance(obj, (datetime, date)):
+                return obj.isoformat()
+            
+            elif is_dataclass(obj):
+                # Not using dataclass.asdict() method, because it does not recurse in to the dataclass field values
+                # and convert the values themselves to dicts.
+                
+                flags_inner = flags if not isinstance(obj, DATACLASSES_EXCLUDE_NONE) else flags | {"exclude_none_values"}
+                result = []
+                for f in fields(obj):
+                    value = to_dict(getattr(obj, f.name), flags_inner)
+                    result.append((f.name, value))
+
+                if 'exclude_none_values' in flags_inner:
+                    return { k: v for (k, v) in result if v is not None }
+                else:
+                    return dict(result)
+                
+            elif isinstance(obj, (list,set,tuple)):
+                if hasattr(obj, '_fields'):
+                    # namedtuple, Standard asdict will not recurse in to the namedtuple fields and convert them to dicts (using dict_factory).
+                    if 'exclude_none_values' in flags:
+                        return type(obj)( *[to_dict(v, flags) for v in obj if v is not None] )
+                    else:
+                        return type(obj)( *[to_dict(v, flags) for v in obj] )
+                else:
+                    # standard list, set or tuple
+                    if 'exclude_none_values' in flags:
+                        return type(obj)( to_dict(v, flags) for v in obj if v is not None )
+                    else:
+                        return type(obj)( to_dict(v, flags) for v in obj )
+            
+            elif isinstance(obj, dict):
+                if hasattr(type(obj), 'default_factory'):
+                    # defaultdict has a different constructor from dict
+                    result = type(obj)(getattr(obj, 'default_factory'))
+                else:
+                    result = type(obj)()
+            
+                for k, v in obj.items():
+                    if v is not None or not 'exclude_none_values' in flags:
+                        result[k] = to_dict(v, flags)
+                return result
+            
+            elif isinstance(obj, (Mapping, MappingProxyType)):
+                 return to_dict(dict(obj), flags)
+            
+            else:
+                return f"{type(obj)} {obj}"
+            
+        except Exception as ex:
+            return f"Could not serialize type {type(obj)}: {ex}"
+        
 

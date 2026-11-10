@@ -1,11 +1,10 @@
-import asyncio
-import copy
-from dataclasses import asdict
-from datetime import datetime, timezone
 import json
 import logging
 import pytest
 import pytest_asyncio
+
+from dataclasses import asdict
+from datetime import datetime, timezone
 
 from pydabpumps import (
     DabPumpsInstall,
@@ -13,16 +12,24 @@ from pydabpumps import (
     DabPumpsDeviceConfig,
     DabPumpsDeviceState,
     DabPumpsParams,
-    DabPumpsStatus,
     DabPumpsParamType,
+    DabPumpsStatus,
     DabPumpsUserRole,
+    DabPumpsLogin, 
+    DabPumpsLoginInfo,
+    DabPumpsAccessTokenInfo,
+    DabPumpsRefreshTokenInfo,
+    DabPumpsHistoryDetail, 
+    DabPumpsHistoryItem,
+    to_dict,
     utcnow,
+    utcmin,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 
-async def test_dict():
+async def test_dataclasses():
 
     install_obj1 = DabPumpsInstall(id="tst_id", name="tst_name")
     install_obj2 = DabPumpsInstall(id="tst_id", name="tst_name", description="tst_descr", company="tst_company", address="tst_address", role=DabPumpsUserRole.INSTALLER, subscr_ts=datetime.now(tz=timezone.utc), devices=2)
@@ -121,3 +128,116 @@ async def test_dict():
 
     state_object = DabPumpsDeviceState(**state_dict)
     assert state_object == state_obj
+
+
+async def test_info():
+
+    login_obj = DabPumpsLoginInfo(login_method=DabPumpsLogin.H2D_APP, retry_schedule=utcmin(), retry_count=0)
+    access_obj = DabPumpsAccessTokenInfo(token="access_token", expires_in=30, expiry=utcnow())
+    refresh_obj = DabPumpsRefreshTokenInfo(token="refresh_token", expires_in=3600, expiry=utcnow(), client_id="client_id", client_secret="client_secret", retry_schedule=utcmin(), retry_count=0)
+
+    # Convert obj into dict.
+    login_dict = asdict(login_obj)
+    access_dict = asdict(access_obj)
+    refresh_dict = asdict(refresh_obj)
+
+    assert login_dict
+    assert access_dict
+    assert refresh_dict 
+
+    # Serialize dict into string
+    login_str = json.dumps(login_dict, default=str)
+    access_str = json.dumps(access_dict, default=str)
+    refresh_str = json.dumps(refresh_dict, default=str)
+
+    assert login_str
+    assert access_str
+    assert refresh_str
+
+    # Deserialize string back into dict
+    login_dict = json.loads(login_str)
+    access_dict = json.loads(access_str)
+    refresh_dict = json.loads(refresh_str)
+
+    assert isinstance(login_dict, dict)
+    assert isinstance(access_dict, dict)
+    assert isinstance(refresh_dict, dict)
+
+    # convert back into an object
+    login_object = DabPumpsLoginInfo(**login_dict)
+    access_object = DabPumpsAccessTokenInfo(**access_dict)
+    refresh_object = DabPumpsRefreshTokenInfo(**refresh_dict)
+
+    assert login_object == login_obj
+    assert access_object == access_obj
+    assert refresh_object == refresh_obj
+
+
+async def test_history():
+
+    item1 = DabPumpsHistoryItem(ts=utcnow(), op="GET", rsp="OK 1")
+    item2 = DabPumpsHistoryItem(ts=utcnow(), op="GET", rsp="OK 2")
+    item3 = DabPumpsHistoryItem(ts=utcnow(), op="GET", rsp="OK 3")
+    detail1 = DabPumpsHistoryDetail(ts=utcnow(), req={'a':'1', 'b':'2', 'c':'3'}, rsp={'x':'X', 'y':'Y', 'z':'Z'}, token={'t':'ABC'})
+    detail2 = DabPumpsHistoryDetail(ts=utcnow(), req={'a':'1', 'b':'2', 'c':None}, rsp={'x':'X', 'y':'Y', 'z':None}, token=None)
+
+    data = {
+        'items': [item1, item2, item3],
+        'details': [detail1, detail2]
+    }
+
+    # Using to_dict for these dataclasses as it provides some special functionality:
+    # - Handle datetime
+    # - Handle Mappings
+    # - Hide None values
+    result = to_dict(data)
+
+    assert result is not None
+    assert isinstance(result, dict)
+    assert len(result) == 2
+
+    assert 'items' in result
+    assert isinstance(result['items'], list)
+    assert len(result['items']) == 3
+
+    i1 = result['items'][0]
+    assert isinstance(i1, dict)
+    assert 'ts' in i1
+    assert isinstance(i1['ts'], str)    # datetime must be converted into isoformat string
+
+    assert 'details' in result
+    assert isinstance(result['details'], list)
+    assert len(result['details']) == 2
+
+    # Check None value is removed
+    d1 = result['details'][0]
+    assert isinstance(d1, dict)
+    assert 'ts' in d1
+    assert isinstance(d1['ts'], str)    # datetime must be converted into isoformat string
+
+    assert 'req' in d1
+    assert isinstance(d1['req'], dict)
+    assert 'c' in d1['req']             # Expected value must be there
+
+    assert 'rsp' in d1
+    assert isinstance(d1['rsp'], dict)
+    assert 'z' in d1['rsp']             # Expected value must be there
+
+    assert 'token' in d1
+    assert isinstance(d1['token'], dict)
+    assert 't' in d1['token']           # Expected value must be there
+
+    d2 = result['details'][1]
+    assert isinstance(d2, dict)
+    assert 'ts' in d2
+    assert isinstance(d2['ts'], str)    # datetime must be converted into isoformat string
+
+    assert 'req' in d2
+    assert isinstance(d2['req'], dict)
+    assert 'c' not in d2['req']         # Inner None value must be removed
+
+    assert 'rsp' in d2
+    assert isinstance(d2['rsp'], dict)
+    assert 'z' not in d2['rsp']         # Inner None value must be removed
+
+    assert 'token' not in d2            # None value must be removed

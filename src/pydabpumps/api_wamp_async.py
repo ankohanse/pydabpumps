@@ -40,6 +40,7 @@ from .const import (
     utcmin,
 )
 from .data import (
+    DabPumpsApiFlag,
     DabPumpsAuthError,
     DabPumpsDeviceState,
     DabPumpsError,
@@ -81,7 +82,7 @@ class WampSubscriptionDetails:
 
 class AsyncDabPumps(AsyncDabPumpsBase):
     
-    def __init__(self, username, password, client:httpx.AsyncClient=None, ssl_context:ssl.SSLContext=None, login_info:DabPumpsLoginInfo=None, access_token_info:DabPumpsAccessTokenInfo=None, refresh_token_info:DabPumpsRefreshTokenInfo=None):
+    def __init__(self, username, password, client:httpx.AsyncClient=None, ssl_context:ssl.SSLContext=None, login_info:DabPumpsLoginInfo=None, access_token_info:DabPumpsAccessTokenInfo=None, refresh_token_info:DabPumpsRefreshTokenInfo=None, persisted_info_path:str=None, flags:dict[DabPumpsApiFlag,Any]=None):
         super().__init__(
             username = username, 
             password = password, 
@@ -89,7 +90,9 @@ class AsyncDabPumps(AsyncDabPumpsBase):
             ssl_context = ssl_context,
             login_info = login_info, 
             access_token_info = access_token_info, 
-            refresh_token_info = refresh_token_info
+            refresh_token_info = refresh_token_info,
+            persisted_info_path = persisted_info_path,
+            flags = flags,
         )
         
         # Wamp component and session

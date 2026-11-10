@@ -30,11 +30,16 @@ TEST_PASSWORD = "fill in your DConnect password here"
 from tests import TEST_USERNAME, TEST_PASSWORD
 
 
+# We will use persisted login tokens from a previous login when available.
+# This is optional, but prevents overloading the DAB Pumps auth servers when re-running the script frequently
+PERSISTED_INFO_PATH = ".persisted_info.json"
+
+
 async def main():
     api = None
     try:
         # Process these calls in the right order
-        api = AsyncDabPumps(TEST_USERNAME, TEST_PASSWORD)
+        api = AsyncDabPumps(TEST_USERNAME, TEST_PASSWORD, persisted_info_path=PERSISTED_INFO_PATH)
         await api.login()
 
         # Retrieve translations (optional)
