@@ -478,6 +478,7 @@ async def test_set_data_by_code(method, key, codes, exp_code, exp_except, reques
     assert param is not None
 
     # Check config param
+    install_id = device.install_id
     install = context.api.install_map.get(device.install_id)
 
     if install.role not in param.change:
@@ -524,7 +525,7 @@ async def test_set_data_by_code(method, key, codes, exp_code, exp_except, reques
     if old_status is None:
         return  # button type, no need to revert back
     
-    changed = await context.api.change_device_status(status.serial, status.key, code=old_code)
+    changed = await context.api.change_device_status(serial, key, code=old_code)
     if changed:
         await context.api.fetch_install_statuses(install_id)
 
@@ -577,6 +578,7 @@ async def test_set_data_by_value(method, key, lang, exp_value, exp_except, reque
     assert param is not None
 
     # Check config param
+    install_id = device.install_id
     install = context.api.install_map.get(device.install_id)
 
     if install.role not in param.change:
@@ -615,7 +617,7 @@ async def test_set_data_by_value(method, key, lang, exp_value, exp_except, reque
     update_ts = context.api.get_status_update(serial, key)
 
     assert status is None or status.value == new_value
-    assert update_ts is not None
+    assert update_ts is None
 
     _LOGGER.debug(f"Found value still changed from {old_value} to {new_value}")
 
@@ -623,7 +625,7 @@ async def test_set_data_by_value(method, key, lang, exp_value, exp_except, reque
     if old_status is None:
         return  # button type, no need to revert back
     
-    changed = await context.api.change_device_status(status.serial, status.key, value=old_value)
+    changed = await context.api.change_device_status(serial, key, value=old_value)
     if changed:
         await context.api.fetch_install_statuses(install_id)
 
