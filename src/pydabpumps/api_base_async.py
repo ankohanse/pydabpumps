@@ -515,12 +515,15 @@ class AsyncDabPumpsBase:
         if not text.startswith(openid_redirect_uri):
             # We received a login page containing a form
             match = re.search(r'action\s?=\s?\"(.*?)\"', text, re.MULTILINE)
+            if not match:
+                # Keycloakify login page (DAB SSO since 2026-11-25): form action is in kcContext.url.loginAction
+                match = re.search(r'"loginAction"\s*:\s*"((?:[^"\\]|\\.)*)"', text)
             if not match:    
                 error = f"Unexpected response while retrieving openid-connect from {request["url"]}: {text}"
                 _LOGGER.debug(error)    # logged as warning after last retry
                 raise DabPumpsAuthError(error)
             
-            auth_url = match.group(1).replace('&amp;', '&')
+            auth_url = match.group(1).replace('\\/', '/').replace('&amp;', '&')
         else:
             # We received a location header containing the openid-code
             auth_url = None
@@ -702,6 +705,9 @@ class AsyncDabPumpsBase:
         text = await self._send_request(context, request)
         
         match = re.search(r'action\s?=\s?\"(.*?)\"', text, re.MULTILINE)
+        if not match:
+            # Keycloakify login page (DAB SSO since 2026-11-25): form action is in kcContext.url.loginAction
+            match = re.search(r'"loginAction"\s*:\s*"((?:[^"\\]|\\.)*)"', text)
         if not match:    
             error = f"Unexpected response while retrieving login url from {request["url"]}: {text}"
             _LOGGER.debug(error)    # logged as warning after last retry
@@ -711,7 +717,7 @@ class AsyncDabPumpsBase:
         context = f"login DConnect_web login"
         request = {
             "method": "POST",
-            "url": match.group(1).replace('&amp;', '&'),
+            "url": match.group(1).replace('\\/', '/').replace('&amp;', '&'),
             "headers": {
                 'Content-Type': 'application/x-www-form-urlencoded',
             },
